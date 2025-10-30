@@ -1,12 +1,11 @@
 # Core dependencies
-strand-sdk
 boto3
 chromadb
 asyncio
 sounddevice
 numpy
 fastapi
-uvicorn[standard]
+uvicorn
 websockets
 python-multipart
 
@@ -17,11 +16,8 @@ amazon-transcribe
 # Audio processing
 pyaudio
 
-# Database
-sqlite3
-
-# PDF processing
+# PDF handling
 PyPDF2
 
-# Development
+# Environment variables
 python-dotenv

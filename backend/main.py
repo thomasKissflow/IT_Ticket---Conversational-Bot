@@ -58,6 +58,7 @@ class VoiceAssistantOrchestrator:
         self.is_running = False
         self.current_session: Optional[ConversationContext] = None
         self.processing_query = False
+        self.main_event_loop: Optional[asyncio.AbstractEventLoop] = None
         
         # Configuration
         self.aws_region = os.getenv('AWS_REGION', 'us-east-2')
@@ -67,6 +68,12 @@ class VoiceAssistantOrchestrator:
     async def initialize(self) -> bool:
         """Initialize all components and verify system readiness."""
         try:
+            # Capture the main event loop for thread-safe operations
+            try:
+                self.main_event_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self.main_event_loop = asyncio.get_event_loop()
+            
             # Initialize voice processor
             try:
                 config = VoiceProcessorConfig(
@@ -277,20 +284,15 @@ class VoiceAssistantOrchestrator:
                     except Exception as stop_error:
                         logger.error(f"Error handling interruption: {stop_error}")
                 
-                # Schedule the interruption handling in the event loop
+                # Schedule the interruption handling in the event loop (thread-safe)
                 try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # Create task to handle interruption
-                        loop.create_task(handle_interruption_async())
+                    # Use the stored main event loop for thread-safe scheduling
+                    if self.main_event_loop and self.main_event_loop.is_running():
+                        # Schedule in the main event loop (thread-safe from any thread)
+                        asyncio.run_coroutine_threadsafe(handle_interruption_async(), self.main_event_loop)
                     else:
-                        # If no event loop, create one
-                        asyncio.create_task(handle_interruption_async())
-                except RuntimeError as e:
-                    if "no running event loop" in str(e):
-                        # Handle the case where we're called from a different thread
-                        logger.warning("No event loop available, using thread-safe approach")
-                        # Use thread-safe approach to schedule the coroutine
+                        # Fallback: create a new thread with its own event loop
+                        logger.debug("Creating new thread for interruption handling")
                         def schedule_interruption_handling():
                             try:
                                 new_loop = asyncio.new_event_loop()
@@ -302,9 +304,9 @@ class VoiceAssistantOrchestrator:
                         
                         import threading
                         interruption_thread = threading.Thread(target=schedule_interruption_handling)
+                        interruption_thread.daemon = True  # Make it a daemon thread
                         interruption_thread.start()
-                    else:
-                        logger.error(f"Event loop error: {e}")
+                        
                 except Exception as interruption_error:
                     logger.error(f"Error scheduling interruption handling: {interruption_error}")
             
@@ -409,16 +411,19 @@ class VoiceAssistantOrchestrator:
             # Generate response
             response = await self._generate_response(agent_results)
             
-            # Speak the response
-            await self.voice_processor.speak(response, interruptible=True)
-            
-            # Add response to conversation history
+            # Add response to conversation history BEFORE speaking (so UI shows it first)
             processing_time = time.time() - start_time
             self.current_session.add_message(
                 response,
                 "assistant",
                 confidence=self._calculate_overall_confidence(agent_results)
             )
+            
+            # Small delay to ensure UI receives the message before voice starts
+            await asyncio.sleep(0.1)
+            
+            # Speak the response
+            await self.voice_processor.speak(response, interruptible=True)
             
             # Store response data for follow-up questions
             self.current_session.last_response_data = {

@@ -60,37 +60,37 @@ class DemoTestRunner:
         test_questions = [
             {
                 "id": 1,
-                "question": "What's the status of ticket TKT-2024-001?",
+                "question": "What's the status of ticket IT 001?",
                 "type": "Ticket Lookup",
                 "expected_agents": ["SupervisorAgent", "TicketAgent"],
                 "description": "Direct ticket status inquiry"
             },
             {
                 "id": 2,
-                "question": "How do I reset my password in the system?",
+                "question": "What is a probe in Super OPS?",
                 "type": "Knowledge Base Query",
                 "expected_agents": ["SupervisorAgent", "KnowledgeAgent"],
                 "description": "General help/documentation question"
             },
             {
                 "id": 3,
-                "question": "Show me all high priority tickets assigned to Sarah Johnson",
-                "type": "Complex Ticket Search",
-                "expected_agents": ["SupervisorAgent", "TicketAgent"],
-                "description": "Multi-criteria ticket search"
+                "question": "Yes give me more info about that",
+                "type": "Follow up question",
+                "expected_agents": ["SupervisorAgent", "KnowledgeAgent"],
+                "description": "Follow up to previous question"
             },
             {
                 "id": 4,
-                "question": "What are the system requirements for the mobile app and also check if there are any related tickets?",
-                "type": "Hybrid Query",
-                "expected_agents": ["SupervisorAgent", "KnowledgeAgent", "TicketAgent"],
-                "description": "Multi-agent coordination needed"
+                "question": "What was the category of my ticket and what was its resolution time?",
+                "type": "Context based question",
+                "expected_agents": ["SupervisorAgent", "TicketAgent"],
+                "description": "Previous context based response needed"
             },
             {
                 "id": 5,
-                "question": "I'm having trouble with login errors, can you help troubleshoot?",
+                "question": "I would like to talk to a human anyways, can you connect to one?",
                 "type": "Support Request",
-                "expected_agents": ["SupervisorAgent", "KnowledgeAgent", "TicketAgent"],
+                "expected_agents": ["SupervisorAgent"],
                 "description": "Ambiguous query requiring intelligent routing"
             }
         ]

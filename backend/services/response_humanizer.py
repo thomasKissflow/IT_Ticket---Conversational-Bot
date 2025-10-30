@@ -831,6 +831,50 @@ Response:"""
                                     combined += f", {part}"
                             return f"{combined}. {title}"
                     
+                    # Check if asking for full ticket details (no specific field mentioned)
+                    query_lower = query.lower()
+                    specific_fields = ['status', 'priority', 'category', 'team', 'assigned', 'resolution time', 'resolution']
+                    is_asking_specific_field = any(field in query_lower for field in specific_fields)
+                    
+                    if not is_asking_specific_field and ('details' in query_lower or 'about' in query_lower or 'information' in query_lower):
+                        # Generate concise full ticket details without markdown
+                        parts = []
+                        parts.append(f"Ticket {ticket_id}")
+                        
+                        if title:
+                            parts.append(f"regarding {title}")
+                        
+                        if status:
+                            parts.append(f"Status is {status}")
+                        
+                        if ticket.get('priority'):
+                            parts.append(f"Priority is {ticket['priority']}")
+                        
+                        if ticket.get('category'):
+                            parts.append(f"Category is {ticket['category']}")
+                        
+                        if ticket.get('assigned_team'):
+                            parts.append(f"Assigned to {ticket['assigned_team']} team")
+                        
+                        if ticket.get('resolution'):
+                            resolution = ticket['resolution']
+                            # Keep resolution concise
+                            if len(resolution) > 100:
+                                resolution = resolution[:97] + "..."
+                            parts.append(f"Resolution: {resolution}")
+                        
+                        # Join parts naturally
+                        if len(parts) <= 2:
+                            return ". ".join(parts) + "."
+                        else:
+                            result = parts[0]
+                            for i, part in enumerate(parts[1:], 1):
+                                if i == len(parts) - 1:
+                                    result += f". {part}"
+                                else:
+                                    result += f". {part}"
+                            return result + "."
+                    
                     return None  # Let LLM handle other types of queries
                 
                 elif ticket_data.get('type') == 'specific_ticket' and not ticket_data.get('found'):

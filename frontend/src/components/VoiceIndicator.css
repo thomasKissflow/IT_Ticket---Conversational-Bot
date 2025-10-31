@@ -1,0 +1,147 @@
+.voice-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  background: white;
+  border-radius: 12px;
+  border: 2px solid #e9ecef;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  min-height: 60px;
+}
+
+.voice-indicator.listening {
+  border-color: #28a745;
+  background: #f8fff9;
+}
+
+.voice-indicator.processing {
+  border-color: #ffc107;
+  background: #fffef8;
+}
+
+.voice-indicator.playing {
+  border-color: #007bff;
+  background: #f8fbff;
+}
+
+.voice-indicator.ready {
+  border-color: #6c757d;
+  background: #f8f9fa;
+}
+
+.status-icon {
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+}
+
+.status-text {
+  font-weight: 600;
+  font-size: 16px;
+  color: #333;
+  min-width: 100px;
+}
+
+.status-animation {
+  display: flex;
+  align-items: center;
+  height: 32px;
+}
+
+/* Listening animation */
+.listening-waves {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.listening-waves .wave {
+  width: 4px;
+  height: 20px;
+  background: #28a745;
+  border-radius: 2px;
+  animation: wave 1.5s ease-in-out infinite;
+}
+
+.listening-waves .wave:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.listening-waves .wave:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes wave {
+  0%, 100% {
+    height: 8px;
+    opacity: 0.5;
+  }
+  50% {
+    height: 24px;
+    opacity: 1;
+  }
+}
+
+/* Processing animation */
+.processing-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #ffc107;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Playing animation */
+.playing-bars {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.playing-bars .bar {
+  width: 3px;
+  height: 16px;
+  background: #007bff;
+  border-radius: 1px;
+  animation: bars 0.8s ease-in-out infinite;
+}
+
+.playing-bars .bar:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.playing-bars .bar:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.playing-bars .bar:nth-child(4) {
+  animation-delay: 0.3s;
+}
+
+@keyframes bars {
+  0%, 100% {
+    height: 8px;
+    opacity: 0.5;
+  }
+  50% {
+    height: 20px;
+    opacity: 1;
+  }
+}

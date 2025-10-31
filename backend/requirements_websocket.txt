@@ -1,0 +1,17 @@
+# Core WebSocket and API dependencies
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+websockets>=11.0.0
+python-multipart
+
+# Basic dependencies for demo
+python-dotenv
+asyncio
+
+# Optional for full functionality (install if available)
+# boto3
+# chromadb
+# sounddevice
+# numpy
+# pyaudio
+# PyPDF2

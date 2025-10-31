@@ -1,0 +1,27 @@
+# Core dependencies
+strand-sdk
+boto3
+chromadb
+asyncio
+sounddevice
+numpy
+fastapi
+uvicorn[standard]
+websockets
+python-multipart
+
+# AWS services
+botocore
+amazon-transcribe
+
+# Audio processing
+pyaudio
+
+# Database
+sqlite3
+
+# PDF processing
+PyPDF2
+
+# Development
+python-dotenv

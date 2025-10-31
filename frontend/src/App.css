@@ -1,0 +1,153 @@
+#root {
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+.app-header {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  padding: 20px 32px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+}
+
+.app-header h1 {
+  margin: 0 0 8px 0;
+  color: #333;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.app-header p {
+  margin: 0;
+  color: #6c757d;
+  font-size: 16px;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  gap: 24px;
+  padding: 24px;
+  overflow: hidden;
+}
+
+.conversation-section {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.controls-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 350px;
+  max-width: 400px;
+}
+
+.control-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.control-button {
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  background: white;
+  color: #333;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.control-button:hover:not(:disabled) {
+  background: #f8f9fa;
+  border-color: #007bff;
+}
+
+.control-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.control-button.escalation-button {
+  background: #fff3cd;
+  border-color: #ffeaa7;
+  color: #856404;
+}
+
+.control-button.escalation-button:hover:not(:disabled) {
+  background: #ffeaa7;
+  border-color: #ffc107;
+}
+
+.control-button.connect {
+  background: #d4edda;
+  border-color: #c3e6cb;
+  color: #155724;
+}
+
+.control-button.connect:hover:not(:disabled) {
+  background: #c3e6cb;
+  border-color: #28a745;
+}
+
+.control-button.disconnect {
+  background: #f8d7da;
+  border-color: #f5c6cb;
+  color: #721c24;
+}
+
+.control-button.disconnect:hover:not(:disabled) {
+  background: #f5c6cb;
+  border-color: #dc3545;
+}
+
+/* Responsive design */
+@media (max-width: 1024px) {
+  .app-main {
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+  }
+  
+  .controls-section {
+    min-width: unset;
+    max-width: unset;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    padding: 16px 20px;
+  }
+  
+  .app-header h1 {
+    font-size: 24px;
+  }
+  
+  .app-main {
+    padding: 12px;
+    gap: 12px;
+  }
+  
+  .controls-section {
+    gap: 12px;
+  }
+}

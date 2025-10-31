@@ -1,0 +1,51 @@
+Ticket ID,Ticket Summary,Ticket Description,Category,Priority,Status,Resolution,Resolution Time,Assigned Team
+IT-001,Probe installation failed on Windows,Probe MSI installer failed with 'LicenseAccepted' error during setup.,Probe Setup,High,Resolved,Added `/QN` and `LicenseAccepted=yes` to the MSI command; reinstalled successfully.,2h,Network Ops
+IT-002,Subnet not auto-fetched,Subnet didn’t populate automatically after converting asset to probe.,Subnet Management,Medium,Resolved,Manually added subnet under Network Monitor > Network Scans.,1h,Network Ops
+IT-003,SNMP credentials invalid,SNMP credential test failed with timeout errors.,Credentials,High,Resolved,Updated SNMP port from 162 to 161 and verified read community string.,45m,Network Ops
+IT-004,Probe not showing under client,Added probe doesn’t appear in probe list for selected client.,Probe Setup,Medium,Resolved,Probe was installed under wrong site; corrected client mapping.,30m,Infra Support
+IT-005,Network scan button disabled,User unable to trigger scan for subnet.,Scanning,High,Resolved,Added active probe to subnet; scan option re-enabled.,40m,Network Ops
+IT-006,Duplicate subnet creation error,Error 'Subnet already exists' displayed while adding subnet.,Subnet Management,Low,Resolved,Verified existing subnet entry and updated CIDR range.,20m,Network Ops
+IT-007,Credential in use cannot delete,User unable to delete credential linked to active probe.,Credentials,Medium,Resolved,"Removed probe dependency first, then deleted credential.",35m,Admin Ops
+IT-008,Custom monitor not saving,Error: 'OID configuration already exists.',Monitoring,Medium,Resolved,Renamed duplicate OID entry; saved successfully.,25m,Network Ops
+IT-009,High packet loss on router,Router showing 70% packet loss in ICMP monitor.,Performance,High,Resolved,"Checked latency, rebooted router; packet loss reduced to 0%.",1h 30m,Infra Support
+IT-010,SSH access denied,SSH terminal not opening from SuperOps.,Troubleshooting,High,Resolved,Added correct SSH credential; confirmed remote shell access.,1h,Network Ops
+IT-011,SNMP V3 device not discovered,Probe couldn’t fetch SNMPv3-enabled asset details.,Discovery,High,Resolved,Updated authentication method from MD5 to SHA; re-scan successful.,50m,Network Ops
+IT-012,ICMP monitor graph missing,ICMP response time graph not rendering.,Monitoring,Medium,Resolved,Cleared cache and restarted agent; graphs reloaded.,30m,Infra Support
+IT-013,Asset marked as unknown,Discovered asset listed as 'unknown' though it’s a Cisco switch.,Asset Management,Medium,Resolved,Added manufacturer and device type manually; now listed as known asset.,40m,Network Ops
+IT-014,Policy not triggering alert,Custom monitor alert condition not creating ticket.,Policy Setup,Medium,Resolved,Enabled alert toggle in policy configuration; ticket triggers verified.,1h,Admin Ops
+IT-015,Network scan slow,Network scan taking longer than expected.,Scanning,Low,Resolved,Reduced SNMP timeout from 10s to 5s; improved scan time.,25m,Network Ops
+IT-016,Cannot disable SNMP,User unable to turn off SNMP on printer asset.,Monitoring,Medium,Resolved,Enabled Configure option under asset settings; disabled SNMP successfully.,15m,Infra Support
+IT-017,Credential does not exist error,Error while linking credential to site.,Credentials,High,Resolved,Recreated deleted credential; linked successfully.,35m,Admin Ops
+IT-018,Probe uninstall failed,Probe uninstall command not removing agent.,Probe Setup,Medium,Resolved,Stopped service manually; re-ran uninstall with elevated privileges.,45m,Network Ops
+IT-019,WMI credential rejected,WMI scan failed on endpoint with 'Access Denied.',Discovery,High,Resolved,Corrected domain\username format and restarted WinRM service.,1h 15m,Infra Support
+IT-020,High RTT on firewall,Ping showing high latency (350ms).,Performance,High,Resolved,Checked bandwidth utilization; optimized routing; latency stable at 50ms.,1h,Network Ops
+IT-021,Probe not communicating,Probe status inactive post installation.,Probe Setup,Critical,Resolved,Opened firewall port 443 for outbound connection; probe online.,1h 10m,Network Ops
+IT-022,Asset missing after scan,Network scan completed but no assets listed.,Discovery,Medium,Resolved,Probe not linked to subnet; re-mapped and re-ran scan.,30m,Network Ops
+IT-023,Alert flood from switch,Multiple duplicate alerts generated for same switch issue.,Alerts,Medium,Resolved,Increased cool-off period in policy to 30 minutes.,25m,Admin Ops
+IT-024,Printer policy missing,Printer-specific policy not available under settings.,Policy Setup,Low,Resolved,Enabled printer policy view from Settings > Policy Management.,20m,Admin Ops
+IT-025,ICMP-only asset misclassified,Device reachable via SNMP but showing ICMP only.,Asset Management,Medium,Resolved,Updated SNMP credentials and rescanned asset.,40m,Network Ops
+IT-026,Time-series graph not updating,Custom monitor graph not plotting data.,Monitoring,Medium,Resolved,Enabled 'time-series' option during monitor setup; graph visible.,25m,Infra Support
+IT-027,Derived monitor error,Custom monitor expression throwing error.,Monitoring,Medium,Resolved,Fixed dependent monitor reference; validated successfully.,35m,Network Ops
+IT-028,Subnet scan fails with timeout,Network scan shows 'no probe found' error.,Scanning,High,Resolved,Added active probe for that subnet and re-initiated scan.,45m,Network Ops
+IT-029,Probe conversion failed,Error while converting existing asset into probe.,Probe Setup,Medium,Resolved,Asset missing SNMP credentials; added new credential and retried.,30m,Infra Support
+IT-030,Firewall showing offline,Device marked offline though reachable manually.,Monitoring,High,Resolved,Restarted SNMP service; asset showing online.,1h,Network Ops
+IT-031,Custom OID returns null,SNMP OID returns empty value for switch metric.,Monitoring,Low,Resolved,Verified OID against manufacturer MIB; replaced correct OID.,35m,Network Ops
+IT-032,WinRM not running,Probe can’t discover endpoints using WMI.,Discovery,High,Resolved,Started WinRM service on probe and endpoint.,30m,Infra Support
+IT-033,Unable to access terminal,SSH Terminal button missing in UI.,Troubleshooting,Medium,Resolved,Upgraded to latest agent version; SSH terminal enabled.,20m,Admin Ops
+IT-034,Policy auto-resolve not working,Alerts not closing automatically post fix.,Policy Setup,Medium,Resolved,Checked Reset checkbox in policy; verified auto-close working.,25m,Admin Ops
+IT-035,Missing default monitors,Default printer monitors not showing under asset class.,Monitoring,Low,Resolved,Re-enabled default monitors in Settings > Asset class > Printer.,20m,Network Ops
+IT-036,High CPU usage on probe,Probe using 90% CPU during large subnet scan.,Performance,High,Resolved,Limited concurrent SNMP requests and reduced scan interval.,1h 15m,Network Ops
+IT-037,Policy editing restricted,User unable to edit saved network policy.,Policy Setup,Medium,Resolved,Changed policy ownership permissions; edit allowed.,30m,Admin Ops
+IT-038,Missing packet loss alerts,No alerts despite 50% packet loss.,Alerts,High,Resolved,Configured alert for 'Packet Loss > 30% for 10 mins'; tested OK.,40m,Network Ops
+IT-039,SNMP retries exceeded,Device marked failed after scan retries.,Scanning,Medium,Resolved,Increased SNMP retry count from 1 to 3; asset discovered.,25m,Infra Support
+IT-040,NAS not listed under network devices,NAS device discovered but not categorized correctly.,Asset Management,Medium,Resolved,Added NAS type manually; monitored via SNMP.,20m,Network Ops
+IT-041,Probe logs missing,Installation log not generated post install.,Probe Setup,Low,Resolved,Added `/L*V 'installation.log'` flag in MSI command.,15m,Infra Support
+IT-042,Interface status monitor alert delayed,Alert generated after long delay.,Monitoring,Medium,Resolved,Reduced polling interval from 30m to 5m for faster detection.,25m,Network Ops
+IT-043,Unknown device listed multiple times,Duplicate entries for same device.,Discovery,Low,Resolved,Cleared duplicate SNMP responses; deduped via IP.,30m,Network Ops
+IT-044,Credential association missing,Probe showing 'no credential assigned.',Credentials,Medium,Resolved,Linked correct SNMP credential in probe settings.,15m,Network Ops
+IT-045,Switch metrics inaccurate,Interface throughput metrics not updating.,Monitoring,Medium,Resolved,Refreshed custom OID; verified real-time update.,35m,Infra Support
+IT-046,SSH credential mismatch,SSH authentication failed with wrong key.,Troubleshooting,High,Resolved,Re-uploaded correct key; SSH terminal accessible.,45m,Network Ops
+IT-047,Network discovery incomplete,Devices missing after discovery scan.,Discovery,Medium,Resolved,Verified WMI/SSH credentials and restarted scan.,50m,Network Ops
+IT-048,SNMP community string reset,Community string reset post restart.,Credentials,Medium,Resolved,Updated stored credential and locked configuration.,25m,Network Ops
+IT-049,Alert email not received,Policy trigger didn’t send notification.,Alerts,Medium,Resolved,Added email action to policy; verified mail delivery.,20m,Admin Ops
+IT-050,Monitoring add-on inactive,User unable to monitor network devices.,Licensing,High,Resolved,Activated Network Monitoring add-on under license settings.,1h,Admin Ops

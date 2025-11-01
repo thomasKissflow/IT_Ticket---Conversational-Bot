@@ -4,9 +4,10 @@ import './ConversationDisplay.css';
 
 interface ConversationDisplayProps {
   messages: Message[];
+  onClearMessages: () => void;
 }
 
-const ConversationDisplay: React.FC<ConversationDisplayProps> = ({ messages }) => {
+const ConversationDisplay: React.FC<ConversationDisplayProps> = ({ messages, onClearMessages }) => {
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -19,6 +20,15 @@ const ConversationDisplay: React.FC<ConversationDisplayProps> = ({ messages }) =
 
   return (
     <div className="conversation-display">
+      {messages.length > 0 && (
+        <button 
+          onClick={onClearMessages}
+          className="clear-button"
+          title="Clear all messages"
+        >
+          ×
+        </button>
+      )}
       <div className="messages-container">
         {messages.map((message) => (
           <div key={message.id} className={`message ${message.type}`}>

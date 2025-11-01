@@ -74,7 +74,7 @@ class TicketAgent(BaseAgent):
         
         try:
             # Parse query to extract search criteria
-            criteria = self._parse_query_criteria(query)
+            criteria = self._parse_query_criteria(query, context)
             
             # Debug: Show what we're searching for
             if criteria.ticket_id:
@@ -127,7 +127,7 @@ class TicketAgent(BaseAgent):
                 metadata={"error": True}
             )
     
-    def _parse_query_criteria(self, query: str) -> SearchCriteria:
+    def _parse_query_criteria(self, query: str, context: Optional[ConversationContext] = None) -> SearchCriteria:
         """Parse natural language query to extract search criteria."""
         criteria = SearchCriteria()
         query_lower = query.lower()
@@ -148,21 +148,40 @@ class TicketAgent(BaseAgent):
                 criteria.ticket_id = f"IT-{number.zfill(3)}"
                 break
         
+        # Check for contextual references like "that ticket", "the ticket", etc.
+        if not criteria.ticket_id and context:
+            contextual_patterns = [
+                r'\b(?:that|the|this)\s+(?:particular\s+)?ticket\b',
+                r'\b(?:that|the|this)\s+(?:one|ticket)\b',
+                r'\bof\s+(?:that|it)\b'
+            ]
+            
+            for pattern in contextual_patterns:
+                if re.search(pattern, query_lower):
+                    # Look for the last mentioned ticket ID in conversation history
+                    last_ticket_id = self._get_last_ticket_id_from_context(context)
+                    if last_ticket_id:
+                        criteria.ticket_id = last_ticket_id
+                        print(f"🔗 Using contextual ticket ID: {last_ticket_id}")
+                        break
+        
         # If no IT pattern found, try other patterns
         if not criteria.ticket_id:
             ticket_id_patterns = [
                 r'ticket\s+(?:id\s+)?([a-zA-Z0-9\-_]+)',
                 r'#([a-zA-Z0-9\-_]+)',
                 r'(?:id|ticket)\s+([a-zA-Z0-9\-_]+)',
-                r'(?:of|for)\s+([a-zA-Z0-9\-_]+)(?:\s|$)',  # "description of 002", "resolution for 004"
-                r'\b(\d{3,})\b'  # Match 3+ digit numbers
+                r'(?:of|for)\s+(\d{1,4})\b',  # Only match numbers after "of" or "for"
+                r'\b(\d{3,4})\b'  # Match 3-4 digit numbers only
             ]
             
             for pattern in ticket_id_patterns:
                 matches = re.findall(pattern, query_lower)
                 for match in matches:
-                    # Skip common words that aren't ticket IDs
-                    if match.lower() not in ['ticket', 'description', 'resolution', 'status', 'for', 'of', 'my']:
+                    # Skip common words and validate the match
+                    if (match.lower() not in ['ticket', 'description', 'resolution', 'status', 'for', 'of', 'my', 'that', 'particular', 'number'] and
+                        len(match) >= 1 and 
+                        (match.isdigit() or any(c.isalnum() for c in match))):
                         raw_id = match.upper()
                         criteria.ticket_id = self._normalize_ticket_id(raw_id)
                         break
@@ -203,6 +222,29 @@ class TicketAgent(BaseAgent):
         criteria.keywords = [word for word in words if word not in stop_words and len(word) > 2]
         
         return criteria
+    
+    def _get_last_ticket_id_from_context(self, context: ConversationContext) -> Optional[str]:
+        """Extract the last mentioned ticket ID from conversation history."""
+        if not context or not context.conversation_history:
+            return None
+        
+        import re
+        
+        # Look through recent messages for ticket IDs
+        for message in reversed(context.conversation_history[-10:]):  # Check last 10 messages
+            if message.speaker == "assistant":
+                # Look for ticket IDs in assistant responses
+                patterns = [
+                    r'\b(IT-\d{3})\b',
+                    r'\bTicket\s+(IT-\d{3})\b'
+                ]
+                
+                for pattern in patterns:
+                    match = re.search(pattern, message.content)
+                    if match:
+                        return match.group(1)
+        
+        return None
     
     def _normalize_ticket_id(self, raw_id: str) -> str:
         """Normalize ticket ID to IT-XXX format."""

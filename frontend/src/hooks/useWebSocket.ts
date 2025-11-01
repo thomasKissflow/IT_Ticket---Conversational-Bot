@@ -20,6 +20,7 @@ interface UseWebSocketReturn {
   disconnect: () => void;
   requestStatus: () => void;
   requestManualEscalation: () => void;
+  clearMessages: () => void;
   isConnected: boolean;
 }
 
@@ -233,6 +234,10 @@ export const useWebSocket = (url: string = 'ws://localhost:8000'): UseWebSocketR
     websocketService.requestManualEscalation();
   }, []);
 
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+  }, []);
+
   // Auto-connect on mount
   useEffect(() => {
     connect();
@@ -274,6 +279,7 @@ export const useWebSocket = (url: string = 'ws://localhost:8000'): UseWebSocketR
     disconnect,
     requestStatus,
     requestManualEscalation,
+    clearMessages,
     isConnected
   };
 };

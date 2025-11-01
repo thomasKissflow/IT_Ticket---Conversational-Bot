@@ -55,7 +55,7 @@ Open your browser and go to: **http://localhost:5173/**
 ## What You'll See
 
 ### 🎨 Frontend Interface
-- **Header**: "🎤 Agentic Voice Assistant"
+- **Header**: "Agentic Voice Assistant"
 - **Left Panel**: Conversation display with message history
 - **Right Panel**: 
   - Voice indicator with animations

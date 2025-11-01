@@ -196,6 +196,17 @@ class ResponseHumanizer:
                     import re
                     cleaned = re.sub(r'\.([A-Z])', r'. \1', cleaned)
                     
+                    # Break up long sentences for better readability
+                    # Look for natural break points
+                    if len(cleaned) > 150:
+                        # Try to break at logical points
+                        sentences = re.split(r'(?<=[.!?])\s+', cleaned)
+                        if len(sentences) > 1:
+                            # Take first 2-3 sentences for conciseness
+                            cleaned = '. '.join(sentences[:2])
+                            if not cleaned.endswith('.'):
+                                cleaned += '.'
+                    
                     # Ensure it ends with proper punctuation
                     if not cleaned.endswith(('.', '!', '?')):
                         cleaned += '.'
@@ -210,6 +221,12 @@ class ResponseHumanizer:
         import re
         answer = re.sub(r'\.([A-Z])', r'. \1', answer)  # Add space after periods
         answer = re.sub(r'\s+', ' ', answer)  # Normalize whitespace
+        
+        # Break up very long responses
+        if len(answer) > 200:
+            sentences = re.split(r'(?<=[.!?])\s+', answer)
+            if len(sentences) > 1:
+                answer = '. '.join(sentences[:2])
         
         if not answer.endswith(('.', '!', '?')):
             answer += '.'

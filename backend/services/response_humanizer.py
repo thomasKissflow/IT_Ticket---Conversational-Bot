@@ -53,7 +53,12 @@ class ResponseHumanizer:
             
             # Handle simple greetings
             if self._is_greeting(original_query):
+
                 return self._get_greeting_response()
+            
+            # Handle thank you messages
+            if self._is_thank_you(original_query):
+                return self._get_thank_you_response()
             
             # Handle errors
             if self._has_errors(agent_results):
@@ -64,6 +69,7 @@ class ResponseHumanizer:
                 return "Hmm, I'm not finding anything on that. Could you try asking differently?"
             
             # Generate human-like response using LLM
+
             return await self._generate_human_response(agent_results, original_query, context)
             
         except Exception as e:
@@ -72,14 +78,52 @@ class ResponseHumanizer:
     
     def _is_greeting(self, query: str) -> bool:
         """Check if the query is a greeting."""
-        greeting_keywords = ['hello', 'hi', 'hey', 'how are you', 'good morning', 'good afternoon', 'good evening']
+        import re
+        greeting_patterns = [
+            r'\bhello\b',
+            r'\bhi\b',
+            r'\bhey\b',
+            r'\bhow are you\b',
+            r'\bgood morning\b',
+            r'\bgood afternoon\b',
+            r'\bgood evening\b'
+        ]
         query_lower = query.lower()
-        return any(keyword in query_lower for keyword in greeting_keywords)
+        return any(re.search(pattern, query_lower) for pattern in greeting_patterns)
     
     def _get_greeting_response(self) -> str:
         """Get a friendly greeting response."""
         import random
         return random.choice(self.greeting_responses)
+    
+    def _is_thank_you(self, query: str) -> bool:
+        """Check if the query is a thank you message."""
+        import re
+        thank_you_patterns = [
+            r'\bthank\s+you\b',
+            r'\bthanks\b',
+            r'\bthank\s+you\s+(?:so\s+)?much\b',
+            r'\bappreciate\s+it\b',
+            r'\bperfect.*thank\b',
+            r'\bgreat.*thank\b',
+            r'\bgoodbye\b',
+            r'\bsee\s+you\b',
+            r'\bhave\s+a\s+good\b'
+        ]
+        query_lower = query.lower()
+        return any(re.search(pattern, query_lower) for pattern in thank_you_patterns)
+    
+    def _get_thank_you_response(self) -> str:
+        """Get a friendly thank you response."""
+        thank_you_responses = [
+            "You're very welcome! Happy to help anytime.",
+            "My pleasure! Feel free to reach out if you need anything else.",
+            "Glad I could help! Have a great day!",
+            "You're welcome! I'm here whenever you need assistance.",
+            "Happy to help! Take care!"
+        ]
+        import random
+        return random.choice(thank_you_responses)
     
     def _has_errors(self, agent_results: List[Dict[str, Any]]) -> bool:
         """Check if any agent results contain errors."""
@@ -243,41 +287,124 @@ class ResponseHumanizer:
                     status = ticket.get('status', 'Unknown')
                     title = ticket.get('title', '')
                     
-                    # Simple template responses
+                    # Multi-part template responses - check for multiple questions
+                    response_parts = []
+                    
+                    # Check for status
                     if 'status' in query.lower():
                         if status.lower() == 'resolved':
-                            return f"Good news! Ticket {ticket_id} has been resolved. {title}"
+                            response_parts.append(f"Ticket {ticket_id} has been resolved")
                         elif status.lower() == 'open':
-                            return f"Ticket {ticket_id} is currently open and being worked on. {title}"
+                            response_parts.append(f"Ticket {ticket_id} is currently open and being worked on")
                         elif status.lower() == 'pending':
-                            return f"Ticket {ticket_id} is pending - we're waiting for some information. {title}"
+                            response_parts.append(f"Ticket {ticket_id} is pending")
                         else:
-                            return f"Ticket {ticket_id} status is {status}. {title}"
+                            response_parts.append(f"Ticket {ticket_id} status is {status}")
                     
-                    elif 'resolution time' in query.lower():
+                    # Check for resolution time
+                    if 'resolution time' in query.lower():
                         resolution_time = ticket.get('resolution_time', 'Not specified')
                         if resolution_time and resolution_time != 'Not specified':
-                            return f"Ticket {ticket_id} was resolved in {resolution_time}. {title}"
+                            formatted_time = self._format_resolution_time(resolution_time)
+                            response_parts.append(f"it was resolved in {formatted_time}")
                         else:
-                            return f"The resolution time for ticket {ticket_id} is not specified in our records."
+                            response_parts.append("resolution time is not specified")
                     
-                    elif 'resolution' in query.lower():
+                    # Check for category
+                    if 'category' in query.lower():
+                        category = ticket.get('category', 'Not specified')
+                        response_parts.append(f"it's categorized under {category}")
+                    
+                    # Check for team assignment
+                    if 'team' in query.lower() or 'assigned' in query.lower():
+                        assigned_team = ticket.get('assigned_team', 'Not specified')
+                        response_parts.append(f"it's assigned to the {assigned_team} team")
+                    
+                    # Check for priority
+                    if 'priority' in query.lower():
+                        priority = ticket.get('priority', 'Not specified')
+                        response_parts.append(f"it has {priority.lower()} priority")
+                    
+                    # Check for resolution details
+                    if 'resolution' in query.lower() and 'resolution time' not in query.lower():
                         resolution = ticket.get('resolution', '')
                         if resolution:
-                            return f"The resolution for ticket {ticket_id}: {resolution}"
+                            response_parts.append(f"resolution: {resolution}")
                         else:
-                            return f"No resolution details are available for ticket {ticket_id}."
+                            response_parts.append("no resolution details available")
+                    
+                    # Combine response parts
+                    if response_parts:
+                        if len(response_parts) == 1:
+                            return f"{response_parts[0]}. {title}"
+                        else:
+                            # Join multiple parts naturally
+                            combined = response_parts[0]
+                            for i, part in enumerate(response_parts[1:], 1):
+                                if i == len(response_parts) - 1:
+                                    combined += f", and {part}"
+                                else:
+                                    combined += f", {part}"
+                            return f"{combined}. {title}"
                     
                     return None  # Let LLM handle other types of queries
                 
                 elif ticket_data.get('type') == 'specific_ticket' and not ticket_data.get('found'):
                     ticket_id = ticket_data.get('ticket_id', 'that ticket')
                     return f"I couldn't find {ticket_id} in our system. Could you double-check the ticket number?"
+                
+                elif ticket_data.get('type') == 'search_results':
+                    tickets = ticket_data.get('combined_results', [])  # Use combined_results instead of tickets
+                    total = len(tickets)
+
+                    
+                    if total == 0:
+                        criteria = ticket_data.get('criteria', {})
+                        category = criteria.get('category')
+                        if category:
+                            return f"I couldn't find any tickets in the {category} category."
+                        else:
+                            return "I couldn't find any tickets matching your criteria."
+                    
+                    elif total <= 5:
+                        # List specific tickets
+                        ticket_list = []
+                        for ticket in tickets:
+                            ticket_list.append(f"{ticket.get('id')}: {ticket.get('title')}")
+                        
+                        return f"Here are the matching tickets: " + ", ".join(ticket_list)
+                    
+                    else:
+                        # Too many to list individually - show first 5
+                        ticket_list = []
+                        for ticket in tickets[:5]:  # Show first 5
+                            ticket_list.append(f"{ticket.get('id')}: {ticket.get('title')}")
+                        
+                        return f"I found {total} tickets. Here are the first 5: " + ", ".join(ticket_list)
             
             return None
+        
         except Exception as e:
             logger.error(f"Error in template response: {e}")
             return None
+    
+    def _format_resolution_time(self, resolution_time: str) -> str:
+        """Format resolution time for TTS to avoid confusion with meters."""
+        if not resolution_time:
+            return resolution_time
+        
+        # Convert common abbreviations to full words for TTS
+        formatted = resolution_time.lower()
+        formatted = formatted.replace('m', ' minutes')
+        formatted = formatted.replace('h', ' hours')
+        formatted = formatted.replace('d', ' days')
+        formatted = formatted.replace('w', ' weeks')
+        
+        # Clean up multiple spaces
+        import re
+        formatted = re.sub(r'\s+', ' ', formatted).strip()
+        
+        return formatted
     
     def _prepare_response_data(self, agent_results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Prepare agent results data for LLM processing."""
@@ -310,6 +437,11 @@ class ResponseHumanizer:
                                    context: Optional[Dict[str, Any]] = None) -> str:
         """Create a concise prompt for humanizing the response."""
         
+        # Build conversation context
+        conversation_context = ""
+        if context and context.get('session_id'):
+            conversation_context = "Previous conversation context available."
+        
         # Build data summary
         data_summary = ""
         
@@ -326,7 +458,14 @@ class ResponseHumanizer:
                         data_summary += f"Ticket {ticket_data.get('ticket_id', 'unknown')} not found"
                 elif ticket_data.get('type') == 'search_results':
                     total = ticket_data.get('total_found', 0)
-                    data_summary += f"Found {total} tickets"
+                    combined_results = ticket_data.get('combined_results', [])
+                    if combined_results:
+                        ticket_list = []
+                        for ticket in combined_results[:3]:  # Show first 3 in summary
+                            ticket_list.append(f"{ticket.get('id')}: {ticket.get('title')}")
+                        data_summary += f"Found {total} tickets including: " + ", ".join(ticket_list)
+                    else:
+                        data_summary += f"Found {total} tickets"
         
         # Add knowledge results
         if response_data.get('knowledge_results'):
@@ -337,11 +476,16 @@ class ResponseHumanizer:
                         # Take first 100 chars of answer
                         data_summary += answer[:100] + "..." if len(answer) > 100 else answer
         
-        # Create concise prompt
-        prompt = f"""User asked: "{original_query}"
-Data: {data_summary}
+        # Create concise prompt with context
+        prompt = f"""You are a voice assistant helping with IT support tickets and knowledge queries.
 
-Give a brief, natural voice response. Be conversational but direct. Max 2 sentences.
+{conversation_context}
+
+User asked: "{original_query}"
+Available data: {data_summary}
+
+Provide a brief, natural voice response. Be conversational but direct. Max 2 sentences.
+If the user is asking for a list or details, provide them clearly.
 
 Response:"""
         

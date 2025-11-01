@@ -215,12 +215,27 @@ Respond only with the JSON object, no additional text."""
         try:
             # Clean up the response (remove any markdown formatting)
             response = response.strip()
+            
+            # Remove markdown code blocks
             if response.startswith('```json'):
                 response = response[7:]
+            if response.startswith('```'):
+                response = response[3:]
             if response.endswith('```'):
                 response = response[:-3]
             
+            # Try to extract JSON from the response
+            import re
+            
+            # Look for JSON object pattern
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                return json.loads(json_str)
+            
+            # If no JSON pattern found, try parsing the whole response
             return json.loads(response)
+            
         except json.JSONDecodeError as e:
             print(f"Failed to parse intent response: {e}")
             print(f"Response was: {response}")

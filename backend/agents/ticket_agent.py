@@ -132,68 +132,113 @@ class TicketAgent(BaseAgent):
         criteria = SearchCriteria()
         query_lower = query.lower()
         
-        # Extract ticket ID patterns
         import re
         
-        # First try to find "IT 001" or "IT-001" patterns specifically
-        it_patterns = [
-            r'\bit\s+(\d+)\b',  # "IT 001"
-            r'\bit-(\d+)\b',    # "IT-001"
+        # First, determine if this is a search query or specific ticket query
+        # Look for explicit search patterns
+        search_patterns = [
+            r'\blist\s+(?:all\s+)?tickets?\b',
+            r'\bshow\s+(?:all\s+)?tickets?\b',
+            r'\bfind\s+(?:all\s+)?tickets?\b',
+            r'\ball\s+tickets?\s+(?:under|in|with)\b',
+            r'\btickets?\s+(?:under|in)\s+(?:the\s+)?category\b'
         ]
         
-        for pattern in it_patterns:
+        is_search_query = any(re.search(pattern, query_lower) for pattern in search_patterns)
+        
+        # Also check for simple list indicators without ticket ID patterns
+        if not is_search_query:
+            simple_search_indicators = ['list all', 'show all', 'find all']
+            is_search_query = any(indicator in query_lower for indicator in simple_search_indicators)
+        
+        # Don't treat contextual queries as search queries
+        contextual_indicators = ['who was it', 'what was the', 'that ticket', 'it assigned']
+        if any(indicator in query_lower for indicator in contextual_indicators):
+            is_search_query = False
+        
+        # If it's a search query, prioritize extracting search criteria over ticket IDs
+        if is_search_query:
+            print(f"🔍 Detected search query: {query}")
+            # Skip ticket ID extraction for search queries
+            pass
+        else:
+            # Try to extract specific ticket ID for non-search queries
+            
+            # First try to find "IT 001" or "IT-001" patterns specifically
+            it_patterns = [
+                r'\bit\s+(\d+)\b',  # "IT 001"
+                r'\bit-(\d+)\b',    # "IT-001"
+            ]
+            
+            for pattern in it_patterns:
+                match = re.search(pattern, query_lower)
+                if match:
+                    number = match.group(1)
+                    criteria.ticket_id = f"IT-{number.zfill(3)}"
+                    break
+            
+            # Check for contextual references like "that ticket", "the ticket", etc.
+            if not criteria.ticket_id and context:
+                contextual_patterns = [
+                    r'\b(?:that|the|this)\s+(?:particular\s+)?ticket\b',
+                    r'\b(?:that|the|this)\s+(?:one|ticket)\b',
+                    r'\bof\s+(?:that|it)\b',
+                    r'\b(?:who|which\s+team)\s+(?:was\s+)?(?:it\s+)?(?:assigned)', # "who was it assigned to"
+                    r'\b(?:what\s+(?:was\s+)?(?:the\s+)?(?:resolution\s+time))', # "what was the resolution time"
+                    r'\b(?:it\s+assigned|assigned\s+to)', # "who was it assigned to"
+                ]
+                
+                for pattern in contextual_patterns:
+                    if re.search(pattern, query_lower):
+                        # Look for the last mentioned ticket ID in conversation history
+                        last_ticket_id = self._get_last_ticket_id_from_context(context)
+                        if last_ticket_id:
+                            criteria.ticket_id = last_ticket_id
+                            print(f"🔗 Using contextual ticket ID: {last_ticket_id}")
+                            break
+            
+            # If no IT pattern found, try other patterns (more specific now)
+            if not criteria.ticket_id:
+                ticket_id_patterns = [
+                    r'my\s+ticket\s+is\s+(\d{1,4})\b',  # "my ticket is 005"
+                    r'ticket\s+(\d{1,4})\b',  # "ticket 005"
+                    r'(?:of|for)\s+(?:ticket\s+)?(\d{1,4})\b',  # "of ticket 005" or "for 005"
+                    r'#(\d{1,4})\b',  # "#005"
+                ]
+                
+                for pattern in ticket_id_patterns:
+                    matches = re.findall(pattern, query_lower)
+                    for match in matches:
+                        if match.isdigit() and len(match) >= 1:
+                            raw_id = match
+                            criteria.ticket_id = self._normalize_ticket_id(raw_id)
+                            print(f"🎫 Extracted ticket ID: {criteria.ticket_id}")
+                            break
+                    if criteria.ticket_id:
+                        break
+        
+        # Extract category - check for category-based queries first
+        category_patterns = [
+            r'category[,\s]+["\']?([^"\']+)["\']?',  # "category, Credentials"
+            r'under\s+(?:the\s+)?category[,\s]+["\']?([^"\']+)["\']?',  # "under the category, Credentials"
+            r'in\s+(?:the\s+)?category[,\s]+["\']?([^"\']+)["\']?',  # "in the category, Credentials"
+            r'category\s+is\s+["\']?([^"\']+)["\']?',  # "category is Credentials"
+        ]
+        
+        import re
+        for pattern in category_patterns:
             match = re.search(pattern, query_lower)
             if match:
-                number = match.group(1)
-                criteria.ticket_id = f"IT-{number.zfill(3)}"
+                criteria.category = match.group(1).strip().title()
                 break
         
-        # Check for contextual references like "that ticket", "the ticket", etc.
-        if not criteria.ticket_id and context:
-            contextual_patterns = [
-                r'\b(?:that|the|this)\s+(?:particular\s+)?ticket\b',
-                r'\b(?:that|the|this)\s+(?:one|ticket)\b',
-                r'\bof\s+(?:that|it)\b'
-            ]
-            
-            for pattern in contextual_patterns:
-                if re.search(pattern, query_lower):
-                    # Look for the last mentioned ticket ID in conversation history
-                    last_ticket_id = self._get_last_ticket_id_from_context(context)
-                    if last_ticket_id:
-                        criteria.ticket_id = last_ticket_id
-                        print(f"🔗 Using contextual ticket ID: {last_ticket_id}")
-                        break
-        
-        # If no IT pattern found, try other patterns
-        if not criteria.ticket_id:
-            ticket_id_patterns = [
-                r'ticket\s+(?:id\s+)?([a-zA-Z0-9\-_]+)',
-                r'#([a-zA-Z0-9\-_]+)',
-                r'(?:id|ticket)\s+([a-zA-Z0-9\-_]+)',
-                r'(?:of|for)\s+(\d{1,4})\b',  # Only match numbers after "of" or "for"
-                r'\b(\d{3,4})\b'  # Match 3-4 digit numbers only
-            ]
-            
-            for pattern in ticket_id_patterns:
-                matches = re.findall(pattern, query_lower)
-                for match in matches:
-                    # Skip common words and validate the match
-                    if (match.lower() not in ['ticket', 'description', 'resolution', 'status', 'for', 'of', 'my', 'that', 'particular', 'number'] and
-                        len(match) >= 1 and 
-                        (match.isdigit() or any(c.isalnum() for c in match))):
-                        raw_id = match.upper()
-                        criteria.ticket_id = self._normalize_ticket_id(raw_id)
-                        break
-                if criteria.ticket_id:
+        # If no specific category pattern, check for known categories
+        if not criteria.category:
+            categories = ['hardware', 'software', 'network', 'security', 'account', 'billing', 'credentials', 'probe setup', 'probe', 'setup']
+            for category in categories:
+                if category in query_lower:
+                    criteria.category = category.title()
                     break
-        
-        # Extract category
-        categories = ['hardware', 'software', 'network', 'security', 'account', 'billing']
-        for category in categories:
-            if category in query_lower:
-                criteria.category = category.title()
-                break
         
         # Extract priority
         priorities = ['high', 'medium', 'low', 'critical', 'urgent']
@@ -314,18 +359,25 @@ class TicketAgent(BaseAgent):
             "total_found": 0
         }
         
-        # Semantic search using ChromaDB
-        semantic_results = await self.data_access.search_tickets(query, top_k=10)
-        results["semantic_results"] = semantic_results
-        
         # Structured search using SQLite
         structured_results = await self._structured_search(criteria)
         results["structured_results"] = structured_results
         
-        # Combine and deduplicate results
-        combined_results = self._combine_search_results(semantic_results, structured_results)
-        results["combined_results"] = combined_results
-        results["total_found"] = len(combined_results)
+        # For category-based searches, prioritize structured results
+        if criteria.category or criteria.priority or criteria.status or criteria.assigned_team:
+            # Use only structured results for filtered searches
+            results["combined_results"] = structured_results
+            results["total_found"] = len(structured_results)
+            print(f"🎯 Category search: found {len(structured_results)} tickets in '{criteria.category}' category")
+        else:
+            # For general searches, use semantic search + structured
+            semantic_results = await self.data_access.search_tickets(query, top_k=10)
+            results["semantic_results"] = semantic_results
+            
+            # Combine and deduplicate results
+            combined_results = self._combine_search_results(semantic_results, structured_results)
+            results["combined_results"] = combined_results
+            results["total_found"] = len(combined_results)
         
         return results
     

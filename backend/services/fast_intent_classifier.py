@@ -31,6 +31,11 @@ class FastIntentClassifier:
             (r'\b(?:resolution|solution|fix)\s+(?:of|for|to)', 'resolution'),
             (r'\b(?:show|get|find|lookup)\s+(?:me\s+)?(?:ticket|id)', 'lookup'),
             
+            # Team assignment queries
+            (r'\b(?:who|which\s+team)\s+(?:was\s+)?(?:it\s+)?(?:assigned\s+to)', 'team_assignment'),
+            (r'\b(?:assigned\s+to|assigned\s+team)', 'team_assignment'),
+            (r'\b(?:resolution\s+time|how\s+long)', 'resolution_time'),
+            
             # General ticket queries
             (r'\b(?:my\s+)?(?:tickets?|issues?|problems?)', 'general_ticket'),
             (r'\b(?:open|closed|pending|resolved)\s+tickets?', 'ticket_search'),
@@ -57,6 +62,10 @@ class FastIntentClassifier:
             (r'\b(?:hello|hi|hey|good\s+(?:morning|afternoon|evening))', 'greeting'),
             (r'\b(?:how\s+are\s+you|how\s+do\s+you\s+do)', 'greeting'),
             (r'\b(?:thanks?|thank\s+you)', 'thanks'),
+            (r'\b(?:thank\s+you\s+(?:so\s+)?much)', 'thanks'),
+            (r'\b(?:perfect.*thank|great.*thank)', 'thanks'),
+            (r'\b(?:goodbye|see\s+you|have\s+a\s+good)', 'thanks'),
+            (r'\b(?:appreciate\s+it)', 'thanks'),
         ]
         
         # Escalation patterns
@@ -64,6 +73,19 @@ class FastIntentClassifier:
             (r'\b(?:escalate|human|agent|person|representative)', 'escalation'),
             (r'\b(?:speak\s+to|talk\s+to|connect\s+me)', 'escalation'),
             (r'\b(?:transfer|forward|hand\s+over)', 'escalation'),
+        ]
+        
+        # Follow-up patterns
+        self.followup_patterns = [
+            (r'\b(?:yes|yeah|yep|sure|okay|ok)\b.*(?:show|list|display)', 'followup_show'),
+            (r'\b(?:please\s+)?(?:show|list|display)\s+(?:them|those|it)', 'followup_show'),
+            (r'\b(?:yes|yeah|yep|sure|okay|ok)\b.*(?:please)', 'followup_confirm'),
+            (r'\b(?:go\s+ahead|continue|proceed)', 'followup_confirm'),
+            
+            # Contextual reference patterns
+            (r'\b(?:who|which\s+team)\s+(?:was\s+)?(?:it\s+)?(?:assigned)', 'contextual_team'),
+            (r'\b(?:what\s+(?:was\s+)?(?:the\s+)?(?:resolution\s+time|time))', 'contextual_time'),
+            (r'\b(?:that\s+(?:particular\s+)?ticket)', 'contextual_ticket'),
         ]
     
     def classify_intent(self, query: str) -> Optional[Intent]:
@@ -94,6 +116,18 @@ class FastIntentClassifier:
                 confidence=0.90,
                 entities={},
                 reasoning="Detected escalation request"
+            )
+        
+        # Check for follow-up queries (should maintain context from previous query)
+        followup_match = self._check_patterns(query_lower, self.followup_patterns)
+        if followup_match:
+            # For follow-ups, we should maintain the same intent as the previous query
+            # This will be handled by the supervisor agent with context
+            return Intent(
+                intent_type=IntentType.TICKET_QUERY,  # Default to ticket for follow-ups
+                confidence=0.85,
+                entities={'followup': True},
+                reasoning="Detected follow-up query"
             )
         
         # Check for ticket-related queries

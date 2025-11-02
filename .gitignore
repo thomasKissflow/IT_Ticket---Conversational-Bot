@@ -51,7 +51,8 @@ frontend/.vite/
 .idea/
 *.swp
 *.swo
-.kiro
+.kiro/
+
 
 # macOS
 .DS_Store

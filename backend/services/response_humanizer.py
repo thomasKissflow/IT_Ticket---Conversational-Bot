@@ -64,9 +64,9 @@ class ResponseHumanizer:
             if self._has_errors(agent_results):
                 return self._get_error_response()
             
-            # Handle empty results
+            # Handle empty results with clarification
             if not agent_results or all(not result.get('data') for result in agent_results):
-                return "Hmm, I'm not finding anything on that. Could you try asking differently?"
+                return self._get_clarification_response(original_query)
             
             # Generate human-like response using LLM
 
@@ -136,12 +136,8 @@ class ResponseHumanizer:
     
     def _is_escalation_request(self, agent_results: List[Dict[str, Any]], query: str) -> bool:
         """Check if this is an escalation request."""
-        # Check if any agent result requires escalation
+        # Check if supervisor detected escalation intent
         for result in agent_results:
-            if result.get('requires_escalation'):
-                return True
-            
-            # Check if supervisor detected escalation intent
             if result.get('agent_name') == 'SupervisorAgent':
                 data = result.get('data', {})
                 intent = data.get('intent')
@@ -151,7 +147,37 @@ class ResponseHumanizer:
         # Check query for escalation keywords
         escalation_keywords = ['escalate', 'human', 'person', 'agent', 'transfer', 'supervisor']
         query_lower = query.lower()
-        return any(keyword in query_lower for keyword in escalation_keywords)
+        if any(keyword in query_lower for keyword in escalation_keywords):
+            return True
+        
+        # Only escalate if ALL non-supervisor agents require escalation AND we have no useful data
+        non_supervisor_results = [r for r in agent_results if r.get('agent_name') != 'SupervisorAgent']
+        
+        if not non_supervisor_results:
+            return False
+        
+        # Check if all agents require escalation AND we have no useful data
+        all_require_escalation = all(r.get('requires_escalation', False) for r in non_supervisor_results)
+        has_useful_data = any(
+            r.get('data', {}).get('type') in ['specific_ticket', 'search_results', 'knowledge_search'] and
+            (r.get('data', {}).get('found') or r.get('data', {}).get('relevant_chunks', 0) > 0)
+            for r in non_supervisor_results
+        )
+        
+        # Check if this might be a clarification opportunity instead of escalation
+        if all_require_escalation and not has_useful_data:
+            # Check if query might need clarification (unclear terms, typos, etc.)
+            unclear_indicators = [
+                len(query.lower().split()) <= 3,  # Very short queries
+                any(word in query.lower() for word in ['po', 'sulus', 'ops']),  # Potential typos/unclear terms
+                query.lower().strip() in ['no', 'yes', 'ok', 'fine']  # Single word responses
+            ]
+            
+            if any(unclear_indicators):
+                return False  # Don't escalate, let it ask for clarification instead
+        
+        # Only escalate if all agents failed AND we have no useful data AND it's not a clarification case
+        return all_require_escalation and not has_useful_data
     
     def _get_escalation_response(self) -> str:
         """Get an escalation response."""
@@ -163,6 +189,31 @@ class ResponseHumanizer:
         ]
         import random
         return random.choice(escalation_responses)
+    
+    def _get_clarification_response(self, query: str) -> str:
+        """Get a clarification response instead of immediate escalation."""
+        query_lower = query.lower().strip()
+        
+        # Specific clarification for potential typos or unclear terms
+        if 'sulus' in query_lower:
+            return "I think you might mean SuperOps? Could you clarify what you're asking about?"
+        elif 'po' in query_lower and len(query_lower.split()) <= 4:
+            return "I'm not sure what 'po' refers to. Did you mean 'probe'? Could you rephrase your question?"
+        elif query_lower in ['no', 'yes', 'ok', 'fine']:
+            return "I'm not sure what you're referring to. Could you please ask your question again?"
+        elif len(query_lower.split()) <= 2:
+            return "Could you provide a bit more detail about what you're looking for?"
+        else:
+            # General clarification responses
+            clarification_responses = [
+                "I'm not sure I understood that correctly. Could you rephrase your question?",
+                "I didn't quite catch that. Could you try asking in a different way?",
+                "I'm having trouble understanding what you're looking for. Could you be more specific?",
+                "Could you clarify what you're asking about? I want to make sure I help you with the right information.",
+                "I'm not sure I followed that. Could you try rephrasing your question?"
+            ]
+            import random
+            return random.choice(clarification_responses)
     
     async def _generate_human_response(self, 
                                      agent_results: List[Dict[str, Any]], 
@@ -180,11 +231,11 @@ class ResponseHumanizer:
                     print(f"📝 Template response: {template_response[:50]}...")
                     return template_response
             
-            # For knowledge queries, try a knowledge template first
+            # For knowledge queries, try a comprehensive knowledge response first
             if response_data.get('knowledge_results'):
-                template_response = self._try_knowledge_template_response(response_data['knowledge_results'], original_query)
+                template_response = await self._try_knowledge_template_response(response_data['knowledge_results'], original_query)
                 if template_response:
-                    print(f"📚 Knowledge template response: {template_response[:50]}...")
+                    print(f"📚 Knowledge comprehensive response: {template_response[:50]}...")
                     return template_response
             
             # Create prompt for humanizing the response
@@ -200,20 +251,103 @@ class ResponseHumanizer:
             logger.error(f"Error generating human response: {e}")
             return "I found some information, but I'm having trouble presenting it clearly. Let me know if you'd like me to try again."
     
-    def _try_knowledge_template_response(self, knowledge_results: List[Dict[str, Any]], query: str) -> Optional[str]:
-        """Try to generate a simple template response for knowledge queries."""
+    async def _call_llm(self, prompt: str) -> str:
+        """Call the LLM client to generate a response."""
+        try:
+            # Use the existing LLM client
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self.llm_client.converse(
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=100,  # Very short responses
+                    temperature=0.5
+                )
+            )
+            return response
+        except Exception as e:
+            logger.error(f"LLM call failed: {e}")
+            raise
+    
+    def _clean_response(self, response: str) -> str:
+        """Clean up the LLM response."""
+        if not response:
+            return ""
+        
+        # Remove any leading/trailing whitespace
+        cleaned = response.strip()
+        
+        # Remove any markdown formatting that might have been added
+        import re
+        cleaned = re.sub(r'\*\*(.*?)\*\*', r'\1', cleaned)  # Remove bold
+        cleaned = re.sub(r'\*(.*?)\*', r'\1', cleaned)      # Remove italic
+        
+        # Ensure proper sentence ending
+        if cleaned and not cleaned.endswith(('.', '!', '?')):
+            cleaned += '.'
+        
+        return cleaned
+    
+    def _is_more_info_request(self, query: str) -> bool:
+        """Check if the user is asking for more information about a previous response."""
+        more_info_indicators = [
+            'more details', 'more information', 'tell me more', 'explain more',
+            'continue', 'more steps', 'remaining steps', 'next steps',
+            'elaborate', 'expand', 'detailed', 'in detail', 'further',
+            'yes please', 'yes', 'continue with', 'go on', 'keep going'
+        ]
+        query_lower = query.lower().strip()
+        return any(indicator in query_lower for indicator in more_info_indicators)
+    
+    async def _generate_detailed_knowledge_response(self, knowledge_data: Dict[str, Any], query: str) -> str:
+        """Generate a detailed response when user asks for more information."""
+        try:
+            contextual_response = knowledge_data.get('contextual_response', {})
+            answer = contextual_response.get('answer', '')
+            knowledge_chunks = knowledge_data.get('knowledge_chunks', [])
+            
+            if not answer:
+                return "I don't have additional details available. Could you ask a more specific question?"
+            
+            # Create a detailed response using LLM
+            prompt = f"""The user asked for more details about this topic. Provide a comprehensive but well-structured response.
+
+Original information:
+{answer}
+
+Additional context from knowledge base:
+{chr(10).join([chunk.get('text', '')[:200] + '...' for chunk in knowledge_chunks[:3]])}
+
+Instructions:
+1. Provide detailed information in a clear, organized way
+2. Use bullet points or numbered lists when appropriate
+3. Break information into digestible sections
+4. Be thorough but not overwhelming
+5. Keep it conversational and helpful
+
+Detailed response:"""
+
+            detailed_response = await self._call_llm(prompt)
+            return self._clean_response(detailed_response)
+            
+        except Exception as e:
+            logger.error(f"Error generating detailed response: {e}")
+            # Fallback to showing more of the original answer
+            contextual_response = knowledge_data.get('contextual_response', {})
+            answer = contextual_response.get('answer', '')
+            return answer if answer else "I don't have additional details available right now."
+    
+    async def _try_knowledge_template_response(self, knowledge_results: List[Dict[str, Any]], query: str) -> Optional[str]:
+        """Generate concise knowledge response with follow-up offers."""
         try:
             for knowledge_data in knowledge_results:
                 if knowledge_data.get('type') == 'knowledge_search':
-                    contextual_response = knowledge_data.get('contextual_response', {})
-                    answer = contextual_response.get('answer', '')
-                    confidence = contextual_response.get('confidence', 0.0)
+                    relevant_chunks = knowledge_data.get('relevant_chunks', 0)
+                    confidence = knowledge_data.get('contextual_response', {}).get('confidence', 0.0)
                     
-                    if answer and confidence > 0.6:
-                        # Clean up the answer for better presentation
-                        clean_answer = self._clean_knowledge_answer(answer)
-                        return clean_answer
-                    elif knowledge_data.get('relevant_chunks', 0) == 0:
+                    # If we have relevant chunks, generate concise response
+                    if relevant_chunks > 0 and confidence > 0.3:
+                        return await self._generate_concise_knowledge_response(knowledge_data, query)
+                    elif relevant_chunks == 0:
                         return "I couldn't find specific information about that in our knowledge base. Could you try rephrasing your question?"
                     else:
                         return "I found some information, but I'm not confident it fully answers your question. Could you be more specific?"
@@ -222,6 +356,170 @@ class ResponseHumanizer:
         except Exception as e:
             logger.error(f"Error in knowledge template response: {e}")
             return None
+    
+    async def _generate_concise_knowledge_response(self, knowledge_data: Dict[str, Any], query: str) -> str:
+        """Generate a concise knowledge response with follow-up offers."""
+        try:
+            # Check if this is a follow-up request for more information
+            if self._is_more_info_request(query):
+                return await self._generate_detailed_knowledge_response(knowledge_data, query)
+            
+            # Get the contextual response
+            contextual_response = knowledge_data.get('contextual_response', {})
+            answer = contextual_response.get('answer', '')
+            knowledge_chunks = knowledge_data.get('knowledge_chunks', [])
+            
+            if not answer or not knowledge_chunks:
+                return "I found some information but couldn't extract the key details. Could you be more specific?"
+            
+            # Create a concise response using LLM
+            prompt = f"""Create a SHORT, helpful response for: "{query}"
+
+Information available:
+{answer[:300]}...
+
+STRICT REQUIREMENTS:
+- Maximum 2 sentences
+- Under 150 characters total
+- One key fact only
+- End with "Would you like more details?"
+
+Examples:
+Q: "What is a probe?" 
+A: "A probe collects monitoring data from your network devices. Would you like more details?"
+
+Q: "How to install SuperOps?"
+A: "Download the installer and run the setup wizard. Would you like the detailed steps?"
+
+Your response (KEEP IT SHORT):"""
+
+            # Check if this is a step-by-step query
+            is_step_query = self._detect_step_by_step_query(query)
+            
+            if is_step_query:
+                # Handle step-by-step queries specially
+                steps = self._extract_steps_from_content(answer)
+                if len(steps) > 3:
+                    # Show first 3 steps and offer to continue
+                    step_response = "Here are the first 3 steps:\n\n"
+                    for i, step in enumerate(steps[:3], 1):
+                        clean_step = step.strip()
+                        if not clean_step.startswith(str(i)):
+                            step_response += f"{i}. {clean_step}\n"
+                        else:
+                            step_response += f"{clean_step}\n"
+                    
+                    step_response += f"\nThere are {len(steps) - 3} more steps. Would you like me to continue with the remaining steps?"
+                    return step_response
+                elif steps:
+                    # Show all steps if 3 or fewer
+                    step_response = "Here are the steps:\n\n"
+                    for i, step in enumerate(steps, 1):
+                        clean_step = step.strip()
+                        if not clean_step.startswith(str(i)):
+                            step_response += f"{i}. {clean_step}\n"
+                        else:
+                            step_response += f"{clean_step}\n"
+                    return step_response.strip()
+            
+            # Generate concise response
+            concise_response = await self._call_llm(prompt)
+            
+            # Clean up the response
+            cleaned_response = self._clean_response(concise_response)
+            
+            # Ensure it's not too long (if it is, truncate and add follow-up offer)
+            if len(cleaned_response) > 150:
+                sentences = cleaned_response.split('. ')
+                if len(sentences) > 1:
+                    # Take first sentence and add follow-up offer
+                    short_response = sentences[0]
+                    if not short_response.endswith('.'):
+                        short_response += '.'
+                    short_response += " Would you like more details?"
+                    return short_response
+                else:
+                    # Truncate long single sentence
+                    truncated = cleaned_response[:140] + "..."
+                    return truncated + " Would you like more details?"
+            
+            return cleaned_response
+            
+        except Exception as e:
+            logger.error(f"Error generating concise knowledge response: {e}")
+            # Fallback to simple response
+            return self._create_fallback_concise_response(knowledge_data, query)
+    
+    def _create_fallback_concise_response(self, knowledge_data: Dict[str, Any], query: str) -> str:
+        """Create a fallback concise response when LLM fails."""
+        try:
+            contextual_response = knowledge_data.get('contextual_response', {})
+            answer = contextual_response.get('answer', '')
+            
+            if not answer:
+                return "I found some information about that. Would you like me to provide more details?"
+            
+            # Extract first sentence or key information
+            import re
+            sentences = re.split(r'[.!?]+', answer)
+            first_sentence = sentences[0].strip() if sentences else answer
+            
+            # Clean up "Based on" prefixes
+            if first_sentence.startswith("Based on "):
+                colon_pos = first_sentence.find(":")
+                if colon_pos > 0:
+                    first_sentence = first_sentence[colon_pos + 1:].strip()
+            
+            # Ensure it's not too long
+            if len(first_sentence) > 100:
+                first_sentence = first_sentence[:97] + "..."
+            
+            # Add follow-up offer
+            if not first_sentence.endswith('.'):
+                first_sentence += '.'
+            
+            return f"{first_sentence} Would you like more details?"
+            
+        except Exception as e:
+            logger.error(f"Error creating fallback response: {e}")
+            return "I found information about that topic. Would you like me to provide more details?"
+    
+    def _detect_step_by_step_query(self, query: str) -> bool:
+        """Detect if the user is asking for step-by-step information."""
+        step_indicators = [
+            'step by step', 'steps', 'how to', 'guide', 'tutorial', 
+            'process', 'procedure', 'instructions', 'walkthrough'
+        ]
+        query_lower = query.lower()
+        return any(indicator in query_lower for indicator in step_indicators)
+    
+    def _extract_steps_from_content(self, content: str) -> List[str]:
+        """Extract steps from content if it contains step-by-step information."""
+        import re
+        
+        # Look for numbered steps
+        step_patterns = [
+            r'(\d+\.\s+[^.]+\.)',  # "1. Step description."
+            r'(Step\s+\d+[:\s]+[^.]+\.)',  # "Step 1: Description."
+            r'(\d+\)\s+[^.]+\.)',  # "1) Step description."
+        ]
+        
+        steps = []
+        for pattern in step_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            if matches:
+                steps.extend(matches)
+                break  # Use first pattern that matches
+        
+        # If no numbered steps, look for bullet points or line breaks
+        if not steps:
+            lines = content.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line and (line.startswith('•') or line.startswith('-') or line.startswith('*')):
+                    steps.append(line)
+        
+        return steps[:10]  # Limit to 10 steps max
     
     def _clean_knowledge_answer(self, answer: str) -> str:
         """Clean up knowledge base answers for better presentation."""
@@ -276,6 +574,128 @@ class ResponseHumanizer:
             answer += '.'
         
         return answer
+    
+    async def _generate_comprehensive_knowledge_response(self, knowledge_data: Dict[str, Any], query: str) -> str:
+        """Generate comprehensive knowledge response using Bedrock with all relevant data."""
+        try:
+            # Extract all knowledge chunks
+            knowledge_chunks = knowledge_data.get('knowledge_chunks', [])
+            contextual_response = knowledge_data.get('contextual_response', {})
+            
+            if not knowledge_chunks:
+                return contextual_response.get('answer', 'I found some information but cannot present it clearly.')
+            
+            # Prepare comprehensive data for Bedrock
+            all_content = []
+            sources = set()
+            
+            for chunk in knowledge_chunks:
+                chunk_text = chunk.get('text', '')
+                source = chunk.get('source', 'unknown')
+                page_num = chunk.get('page_number')
+                
+                if chunk_text:
+                    all_content.append(chunk_text)
+                    if page_num:
+                        sources.add(f"{source} (page {page_num})")
+                    else:
+                        sources.add(source)
+            
+            # Combine all content
+            combined_content = "\n\n".join(all_content)
+            sources_list = list(sources)
+            
+            # Determine response type based on query
+            response_type = self._determine_response_type(query)
+            
+            # Create comprehensive prompt for Bedrock
+            prompt = self._create_knowledge_synthesis_prompt(query, combined_content, sources_list, response_type)
+            
+            # Generate response using LLM
+            response = await self._call_llm_for_knowledge(prompt)
+            
+            return response.strip()
+            
+        except Exception as e:
+            logger.error(f"Error generating comprehensive knowledge response: {e}")
+            # Fallback to basic contextual response
+            return knowledge_data.get('contextual_response', {}).get('answer', 'I found some information but had trouble processing it.')
+    
+    def _determine_response_type(self, query: str) -> str:
+        """Determine what type of response is needed based on the query."""
+        query_lower = query.lower()
+        
+        # Step-by-step instructions
+        if any(phrase in query_lower for phrase in ['how to', 'how do i', 'steps', 'install', 'configure', 'setup', 'create']):
+            return "step_by_step"
+        
+        # Concept explanation
+        elif any(phrase in query_lower for phrase in ['what is', 'what are', 'explain', 'define', 'meaning']):
+            return "concept_explanation"
+        
+        # Comparison or features
+        elif any(phrase in query_lower for phrase in ['difference', 'compare', 'vs', 'versus', 'features', 'capabilities']):
+            return "comparison"
+        
+        # Troubleshooting
+        elif any(phrase in query_lower for phrase in ['problem', 'issue', 'error', 'not working', 'fix', 'troubleshoot']):
+            return "troubleshooting"
+        
+        # General information
+        else:
+            return "general_info"
+    
+    def _create_knowledge_synthesis_prompt(self, query: str, content: str, sources: List[str], response_type: str) -> str:
+        """Create a comprehensive prompt for knowledge synthesis."""
+        
+        # Base instruction based on response type
+        if response_type == "step_by_step":
+            instruction = """Provide clear, numbered step-by-step instructions. Be specific and actionable. Include any prerequisites or important notes."""
+        elif response_type == "concept_explanation":
+            instruction = """Provide a clear, concise explanation of the concept. Start with a simple definition, then add relevant details. Make it easy to understand."""
+        elif response_type == "comparison":
+            instruction = """Provide a clear comparison highlighting key differences, similarities, and use cases. Use bullet points if helpful."""
+        elif response_type == "troubleshooting":
+            instruction = """Provide troubleshooting guidance with potential causes and solutions. Be systematic and helpful."""
+        else:
+            instruction = """Provide comprehensive, well-organized information that directly answers the question. Be thorough but concise."""
+        
+        return f"""You are an IT support assistant. Based on the documentation provided, answer the user's question comprehensively.
+
+User Question: "{query}"
+
+Available Documentation:
+{content}
+
+Sources: {', '.join(sources)}
+
+Instructions: {instruction}
+
+Requirements:
+- Answer directly and completely based on the documentation
+- Be conversational and human-like, not robotic
+- Use natural language appropriate for voice interaction
+- If the documentation contains step-by-step information, present it clearly
+- Include relevant details but keep it focused
+- Don't mention "based on the documentation" - just provide the answer naturally
+
+Response:"""
+    
+    async def _call_llm_for_knowledge(self, prompt: str) -> str:
+        """Call LLM specifically for knowledge synthesis."""
+        try:
+            # Use the converse method for better results
+            response = self.llm_client.converse(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1500,  # Allow longer responses for comprehensive answers
+                temperature=0.7   # Slightly creative for natural language
+            )
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error calling LLM for knowledge synthesis: {e}")
+            raise
     
     def _try_template_response(self, ticket_results: List[Dict[str, Any]], query: str) -> Optional[str]:
         """Try to generate a simple template response for ticket queries."""
@@ -476,18 +896,13 @@ class ResponseHumanizer:
                         # Take first 100 chars of answer
                         data_summary += answer[:100] + "..." if len(answer) > 100 else answer
         
-        # Create concise prompt with context
-        prompt = f"""You are a voice assistant helping with IT support tickets and knowledge queries.
+        # Create concise prompt - system context is handled by LLM client
+        prompt = f"""User asked: "{original_query}"
+Available data: {data_summary}
 
 {conversation_context}
 
-User asked: "{original_query}"
-Available data: {data_summary}
-
-Provide a brief, natural voice response. Be conversational but direct. Max 2 sentences.
-If the user is asking for a list or details, provide them clearly.
-
-Response:"""
+Provide a natural, conversational response as an IT support assistant. Be helpful and human-like, not robotic. Keep it concise but complete."""
         
         return prompt
     
@@ -502,8 +917,8 @@ Response:"""
                         "content": prompt
                     }
                 ],
-                "max_tokens": 500,
-                "temperature": 0.7
+                "max_tokens": 512,
+                "temperature": 0.6
             }
             
             # Make the call in a thread pool to avoid blocking

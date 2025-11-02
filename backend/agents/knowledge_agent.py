@@ -53,7 +53,7 @@ class KnowledgeAgent(BaseAgent):
     def __init__(self, sqlite_db_path: str = "./data/voice_assistant.db", chroma_db_path: str = "./data/chroma_db"):
         super().__init__("KnowledgeAgent", AgentType.KNOWLEDGE)
         self.data_access = DataAccess(sqlite_db_path, chroma_db_path)
-        self.relevance_threshold = 0.7
+        self.relevance_threshold = 0.5  # Lower threshold for better recall
         self.max_chunks_per_response = 5
     
     async def process_query(self, query: str, context: ConversationContext) -> AgentResult:
@@ -78,6 +78,10 @@ class KnowledgeAgent(BaseAgent):
             # Calculate confidence based on relevance scores and chunk quality
             confidence = self._calculate_confidence(relevant_chunks, query)
             
+            # Boost confidence if we have any relevant chunks
+            if relevant_chunks and confidence < 0.6:
+                confidence = max(confidence, 0.6)  # Minimum confidence for any relevant results
+            
             result_data = {
                 "type": "knowledge_search",
                 "query": query,
@@ -92,7 +96,9 @@ class KnowledgeAgent(BaseAgent):
             }
             
             processing_time = time.time() - start_time
-            requires_escalation = confidence < 0.6 or len(relevant_chunks) == 0
+            # Be less aggressive about escalation for follow-up questions
+            is_followup = any(word in query.lower() for word in ['it', 'that', 'this', 'smaller', 'shorter', 'more', 'less'])
+            requires_escalation = (confidence < 0.4 or len(relevant_chunks) == 0) and not is_followup
             
             return AgentResult(
                 agent_name=self.name,
@@ -171,23 +177,38 @@ class KnowledgeAgent(BaseAgent):
             chunks = await self.semantic_search(topic, top_k=5)
         
         if not chunks:
-            return ContextualResponse(
-                answer="I couldn't find relevant information about this topic in the knowledge base.",
-                supporting_chunks=[],
-                confidence=0.0,
-                sources=[]
-            )
+            # Check if the query might have unclear terms that need clarification
+            unclear_terms = self._detect_unclear_terms(topic)
+            if unclear_terms:
+                return ContextualResponse(
+                    answer=f"I couldn't find information about '{unclear_terms}'. Did you mean something else? Could you clarify?",
+                    supporting_chunks=[],
+                    confidence=0.1,  # Low confidence to trigger clarification
+                    sources=[]
+                )
+            else:
+                return ContextualResponse(
+                    answer="I couldn't find relevant information about this topic in the knowledge base.",
+                    supporting_chunks=[],
+                    confidence=0.0,
+                    sources=[]
+                )
         
-        # Filter high-relevance chunks
+        # Filter high-relevance chunks with more permissive threshold
         high_relevance_chunks = [c for c in chunks if c.relevance_score >= self.relevance_threshold]
         
+        # If no high relevance chunks, use medium relevance chunks
         if not high_relevance_chunks:
-            return ContextualResponse(
-                answer="I found some information, but it doesn't seem directly relevant to your question.",
-                supporting_chunks=chunks[:2],  # Include top 2 even if low relevance
-                confidence=0.3,
-                sources=list(set(c.source for c in chunks[:2]))
-            )
+            medium_relevance_chunks = [c for c in chunks if c.relevance_score >= 0.3]
+            if medium_relevance_chunks:
+                high_relevance_chunks = medium_relevance_chunks[:3]  # Take top 3 medium relevance
+            else:
+                return ContextualResponse(
+                    answer="I found some information, but it doesn't seem directly relevant to your question.",
+                    supporting_chunks=chunks[:2],  # Include top 2 even if low relevance
+                    confidence=0.2,
+                    sources=list(set(c.source for c in chunks[:2]))
+                )
         
         # Generate contextual answer
         answer = self._generate_contextual_answer(topic, high_relevance_chunks)
@@ -290,9 +311,8 @@ class KnowledgeAgent(BaseAgent):
         # Base confidence on average relevance score
         avg_relevance = sum(c.relevance_score for c in chunks) / len(chunks)
         
-        # Boost confidence if we have multiple high-relevance chunks
-        high_relevance_count = sum(1 for c in chunks if c.relevance_score >= self.relevance_threshold)
-        count_boost = min(high_relevance_count * 0.1, 0.2)
+        # Boost confidence if we have multiple chunks
+        chunk_count_boost = min(len(chunks) * 0.05, 0.15)
         
         # Boost confidence if query terms appear in chunk text
         query_terms = set(query.lower().split())
@@ -306,12 +326,44 @@ class KnowledgeAgent(BaseAgent):
                 term_matches += matches
             
             term_match_ratio = min(term_matches / (total_terms * 3), 1.0)
-            term_boost = term_match_ratio * 0.15
+            term_boost = term_match_ratio * 0.2
         else:
             term_boost = 0.0
         
-        confidence = avg_relevance + count_boost + term_boost
+        # Special boost for SuperOps-related queries
+        superops_terms = ['superops', 'probe', 'monitoring', 'network', 'device']
+        if any(term in query.lower() for term in superops_terms):
+            superops_boost = 0.1
+        else:
+            superops_boost = 0.0
+        
+        confidence = avg_relevance + chunk_count_boost + term_boost + superops_boost
         return min(confidence, 0.95)  # Cap at 0.95
+    
+    def _detect_unclear_terms(self, query: str) -> Optional[str]:
+        """Detect potentially unclear or misspelled terms in the query."""
+        query_lower = query.lower()
+        
+        # Common typos or unclear terms
+        unclear_mappings = {
+            'sulus': 'SuperOps',
+            'po': 'probe', 
+            'ops': 'SuperOps',
+            'super ops': 'SuperOps',
+            'superop': 'SuperOps'
+        }
+        
+        for unclear_term, suggested_term in unclear_mappings.items():
+            if unclear_term in query_lower:
+                return unclear_term
+        
+        # Check for very short technical terms that might be unclear
+        words = query_lower.split()
+        for word in words:
+            if len(word) <= 2 and word.isalpha() and word not in ['is', 'a', 'an', 'to', 'in', 'on', 'at', 'it']:
+                return word
+        
+        return None
     
     async def verify_information(self, claim: str) -> VerificationResult:
         """

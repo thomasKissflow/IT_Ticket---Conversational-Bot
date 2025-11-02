@@ -152,8 +152,9 @@ class TicketAgent(BaseAgent):
             is_search_query = any(indicator in query_lower for indicator in simple_search_indicators)
         
         # Don't treat contextual queries as search queries
-        contextual_indicators = ['who was it', 'what was the', 'that ticket', 'it assigned']
-        if any(indicator in query_lower for indicator in contextual_indicators):
+        contextual_indicators = ['who was it', 'what was the', 'that ticket', 'it assigned', 'that particular ticket', 'what was', 'who was']
+        is_contextual_query = any(indicator in query_lower for indicator in contextual_indicators)
+        if is_contextual_query:
             is_search_query = False
         
         # If it's a search query, prioritize extracting search criteria over ticket IDs
@@ -184,8 +185,12 @@ class TicketAgent(BaseAgent):
                     r'\b(?:that|the|this)\s+(?:one|ticket)\b',
                     r'\bof\s+(?:that|it)\b',
                     r'\b(?:who|which\s+team)\s+(?:was\s+)?(?:it\s+)?(?:assigned)', # "who was it assigned to"
-                    r'\b(?:what\s+(?:was\s+)?(?:the\s+)?(?:resolution\s+time))', # "what was the resolution time"
+                    r'\b(?:what\s+(?:was\s+)?(?:the\s+)?(?:resolution))', # "what was the resolution"
                     r'\b(?:it\s+assigned|assigned\s+to)', # "who was it assigned to"
+                    r'\b(?:resolution\s+(?:given|provided))', # "resolution given by"
+                    r'\b(?:which\s+team\s+(?:gave|provided))', # "which team gave"
+                    r'\b(?:team\s+(?:gave|provided))', # "team gave that resolution"
+                    r'\b(?:given\s+by\s+(?:the\s+)?team)', # "given by the team"
                 ]
                 
                 for pattern in contextual_patterns:
@@ -217,20 +222,21 @@ class TicketAgent(BaseAgent):
                     if criteria.ticket_id:
                         break
         
-        # Extract category - check for category-based queries first
-        category_patterns = [
-            r'category[,\s]+["\']?([^"\']+)["\']?',  # "category, Credentials"
-            r'under\s+(?:the\s+)?category[,\s]+["\']?([^"\']+)["\']?',  # "under the category, Credentials"
-            r'in\s+(?:the\s+)?category[,\s]+["\']?([^"\']+)["\']?',  # "in the category, Credentials"
-            r'category\s+is\s+["\']?([^"\']+)["\']?',  # "category is Credentials"
-        ]
-        
-        import re
-        for pattern in category_patterns:
-            match = re.search(pattern, query_lower)
-            if match:
-                criteria.category = match.group(1).strip().title()
-                break
+        # Extract category - but not for contextual queries asking about category
+        if not is_contextual_query or 'category' not in query_lower:
+            category_patterns = [
+                r'category[,\s]+["\']?([^"\']+)["\']?',  # "category, Credentials"
+                r'under\s+(?:the\s+)?category[,\s]+["\']?([^"\']+)["\']?',  # "under the category, Credentials"
+                r'in\s+(?:the\s+)?category[,\s]+["\']?([^"\']+)["\']?',  # "in the category, Credentials"
+                r'category\s+is\s+["\']?([^"\']+)["\']?',  # "category is Credentials"
+            ]
+            
+            import re
+            for pattern in category_patterns:
+                match = re.search(pattern, query_lower)
+                if match:
+                    criteria.category = match.group(1).strip().title()
+                    break
         
         # If no specific category pattern, check for known categories
         if not criteria.category:
@@ -275,19 +281,25 @@ class TicketAgent(BaseAgent):
         
         import re
         
-        # Look through recent messages for ticket IDs
+        # Look through recent messages for ticket IDs (both user and assistant messages)
         for message in reversed(context.conversation_history[-10:]):  # Check last 10 messages
-            if message.speaker == "assistant":
-                # Look for ticket IDs in assistant responses
-                patterns = [
-                    r'\b(IT-\d{3})\b',
-                    r'\bTicket\s+(IT-\d{3})\b'
-                ]
-                
-                for pattern in patterns:
-                    match = re.search(pattern, message.content)
-                    if match:
-                        return match.group(1)
+            # Look for ticket IDs in both user queries and assistant responses
+            patterns = [
+                r'\b(IT-\d{3})\b',                    # "IT-001"
+                r'\bTicket\s+(IT-\d{3})\b',          # "Ticket IT-001"
+                r'\bmighty\s+ticket\s+(\d+)\b',      # "mighty ticket 001"
+                r'\bticket\s+(\d+)\b',               # "ticket 001"
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, message.content, re.IGNORECASE)
+                if match:
+                    ticket_id = match.group(1)
+                    # Normalize to IT-XXX format if it's just a number
+                    if ticket_id.isdigit():
+                        ticket_id = f"IT-{ticket_id.zfill(3)}"
+                    print(f"🔗 Found contextual ticket ID: {ticket_id} from: '{message.content[:50]}...'")
+                    return ticket_id
         
         return None
     

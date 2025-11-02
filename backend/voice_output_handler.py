@@ -38,7 +38,7 @@ class VoiceOutputHandler:
     """Enhanced voice output handler with interruptible playback and thinking sounds"""
     
     def __init__(self, 
-                 aws_region: str = 'us-east-1',
+                 aws_region: str = 'us-east-2',
                  voice_id: str = 'Matthew',
                  sample_rate: int = 16000):
         

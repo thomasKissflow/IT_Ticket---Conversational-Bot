@@ -24,7 +24,7 @@ class SupervisorAgent(BaseAgent):
     Uses AWS Bedrock for intent analysis and response synthesis.
     """
     
-    def __init__(self, aws_region: str = "us-east-1"):
+    def __init__(self, aws_region: str = "us-east-2"):
         super().__init__("SupervisorAgent", AgentType.SUPERVISOR)
         self.aws_region = aws_region
         self.llm_client = get_llm_client(aws_region)
@@ -148,12 +148,22 @@ class SupervisorAgent(BaseAgent):
         return f"""You are an AI assistant that analyzes user queries for a support voice assistant system. 
 Your job is to determine the user's intent and classify it into one of these categories:
 
-1. ticket_query - Questions about existing support tickets, ticket status, or ticket-related data
-2. knowledge_query - Questions about product information, documentation, or general knowledge
-3. mixed_query - Questions that require both ticket and knowledge information
+ROUTING RULES:
+1. ticket_query - ONLY for questions about existing tickets, ticket status, ticket IDs, or ticket operations
+   Examples: "What's the status of ticket 123?", "Show me my tickets", "Is ticket resolved?"
+   
+2. knowledge_query - ONLY for questions about products, documentation, how-to guides, or general information
+   Examples: "What is a probe?", "How do I install SuperOps?", "What are system requirements?"
+   
+3. mixed_query - ONLY when the query explicitly asks for BOTH ticket information AND knowledge information in the same question
+   Examples: "I have a ticket about probe issues, can you also explain what a probe is?"
+   
 4. greeting - Greetings, introductions, or conversation starters
 5. escalation - Requests to speak with a human or escalate the issue
 6. unknown - Unclear or unclassifiable queries
+
+IMPORTANT: Be very precise with routing. If a query is clearly about tickets OR knowledge, don't classify it as mixed_query.
+Only use mixed_query when the user explicitly asks for both types of information in the same question.
 
 Conversation Context:
 {conversation_context}
@@ -161,17 +171,24 @@ Conversation Context:
 Current User Query: "{query}"
 
 Analyze this query and respond with a JSON object containing:
-- intent_type: one of the categories above
+- intent_type: one of the categories above (be precise - avoid mixed_query unless truly needed)
 - confidence: a float between 0.0 and 1.0 indicating your confidence
 - entities: any specific entities mentioned (ticket IDs, product names, etc.)
 - reasoning: brief explanation of your classification
 
-Example response:
+Example responses:
 {{
     "intent_type": "ticket_query",
-    "confidence": 0.9,
-    "entities": {{"ticket_id": "12345", "status": "open"}},
-    "reasoning": "User is asking about the status of a specific ticket"
+    "confidence": 0.95,
+    "entities": {{"ticket_id": "005"}},
+    "reasoning": "User is asking specifically about the status of ticket 005"
+}}
+
+{{
+    "intent_type": "knowledge_query", 
+    "confidence": 0.90,
+    "entities": {{"topic": "probe installation"}},
+    "reasoning": "User wants to learn how to install a probe"
 }}
 
 Respond only with the JSON object, no additional text."""
@@ -187,8 +204,8 @@ Respond only with the JSON object, no additional text."""
                         "content": prompt
                     }
                 ],
-                "max_tokens": 1000,
-                "temperature": 0.7
+                "max_tokens": 512,
+                "temperature": 0.6
             }
             
             # Make the call in a thread pool to avoid blocking

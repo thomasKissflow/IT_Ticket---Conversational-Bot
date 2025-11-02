@@ -283,9 +283,9 @@ class InterruptionDetector:
                 is_meaningful=audio_info['is_voice_detected']
             )
             
-            # For now, trigger interruption based on audio level
-            # In a full implementation, this would wait for transcript confirmation
-            if (audio_info['rms_level'] > self.audio_threshold * 2 and
+            # Trigger interruption based on audio level (more sensitive)
+            # Lower threshold for better responsiveness
+            if (audio_info['rms_level'] > self.audio_threshold * 1.5 and
                 self._should_trigger_interruption()):
                 
                 logger.info(f"Interruption detected - Audio level: {audio_info['rms_level']:.3f}")
@@ -301,10 +301,10 @@ class InterruptionDetector:
     def _should_trigger_interruption(self) -> bool:
         """Determine if interruption should be triggered based on timing and state"""
         try:
-            # Avoid triggering interruptions too frequently
+            # Avoid triggering interruptions too frequently (but allow faster interruptions)
             if self.last_interruption_time:
                 time_since_last = (datetime.now() - self.last_interruption_time).total_seconds()
-                if time_since_last < 1.0:  # Minimum 1 second between interruptions
+                if time_since_last < 0.5:  # Minimum 0.5 seconds between interruptions
                     return False
             
             # Only trigger during active playback

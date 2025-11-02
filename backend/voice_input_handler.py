@@ -93,7 +93,7 @@ class VoiceInputHandler:
                  channels: int = 1,
                  chunk_duration: float = 0.1,
                  interruption_threshold: int = 3,
-                 aws_region: str = 'us-east-1'):
+                 aws_region: str = 'us-east-2'):
         
         self.sample_rate = sample_rate
         self.channels = channels

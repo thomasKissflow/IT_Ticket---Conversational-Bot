@@ -131,7 +131,7 @@ class ResponseTimeMonitor:
 class AWSConnectionPool:
     """Connection pool for AWS services with automatic retry and optimization."""
     
-    def __init__(self, region: str = "us-east-1", max_connections: int = 10):
+    def __init__(self, region: str = "us-east-2", max_connections: int = 10):
         self.region = region
         self.max_connections = max_connections
         self._clients: Dict[str, Any] = {}
@@ -310,7 +310,7 @@ class QueryCache:
 class PerformanceOptimizer:
     """Main performance optimization coordinator."""
     
-    def __init__(self, target_response_time: float = 0.5, aws_region: str = "us-east-1"):
+    def __init__(self, target_response_time: float = 0.5, aws_region: str = "us-east-2"):
         self.target_response_time = target_response_time
         self.aws_region = aws_region
         

@@ -23,10 +23,9 @@ class ConversationManager:
     thinking sounds, and context-aware formatting.
     """
     
-    def __init__(self, aws_region: str = "us-east-1"):
+    def __init__(self, aws_region: str = "us-east-2"):
         self.aws_region = aws_region
         self.llm_client = get_llm_client(aws_region)
-        self.model_id = "anthropic.claude-3-5-sonnet-20241022-v2:0"
         
         # Predefined greeting messages for variety
         self.greeting_messages = [
@@ -252,8 +251,7 @@ class ConversationManager:
     def _create_response_formatting_prompt(self, data: Any, conversation_summary: str,
                                          intro_phrase: str, confidence: float, agent_name: str) -> str:
         """Create prompt for natural response formatting."""
-        return f"""You are formatting a response for a conversational voice assistant. 
-Convert the following data into a natural, spoken response that sounds human-like.
+        return f"""Convert the following data into a natural, conversational response for voice interaction.
 
 Recent Conversation Context:
 {conversation_summary}
@@ -262,44 +260,33 @@ Agent Data to Format:
 {json.dumps(data, indent=2) if isinstance(data, (dict, list)) else str(data)}
 
 Response Guidelines:
-- Start with this intro phrase: "{intro_phrase}"
-- Make it sound conversational and natural for voice interaction
+- Start with: "{intro_phrase}"
+- Sound natural and human-like, not robotic
+- Be conversational and friendly
 - Keep it concise but informative
-- Use natural speech patterns with appropriate pauses
 - Confidence level: {confidence:.2f} (adjust certainty accordingly)
-- Source agent: {agent_name}
+- Source: {agent_name}
 
-If the confidence is low (< 0.6), express appropriate uncertainty.
-If the data contains errors, acknowledge limitations gracefully.
+If confidence is low (< 0.6), express appropriate uncertainty.
+If data contains errors, acknowledge limitations gracefully.
 
-Respond with just the natural language response, no additional formatting or explanations."""
+Provide just the natural response, no extra formatting."""
     
     async def _call_bedrock(self, prompt: str) -> str:
-        """Make async call to AWS Bedrock for response generation."""
+        """Make async call to LLM client for response generation."""
         try:
-            body = {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 1000,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
-            }
-            
+            # Use the converse method for better compatibility
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
-                lambda: self.llm_client.invoke_model(
-                    modelId=self.model_id,
-                    body=json.dumps(body),
-                    contentType='application/json'
+                lambda: self.llm_client.converse(
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=512,
+                    temperature=0.6
                 )
             )
             
-            response_body = json.loads(response['body'].read())
-            return response_body['content'][0]['text']
+            return response
             
         except Exception as e:
             print(f"LLM call failed in ConversationManager: {e}")

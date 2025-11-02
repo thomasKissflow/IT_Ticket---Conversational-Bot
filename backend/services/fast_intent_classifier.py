@@ -39,6 +39,8 @@ class FastIntentClassifier:
             # General ticket queries
             (r'\b(?:my\s+)?(?:tickets?|issues?|problems?)', 'general_ticket'),
             (r'\b(?:open|closed|pending|resolved)\s+tickets?', 'ticket_search'),
+            (r'\b(?:show|list|display|get)\s+(?:me\s+)?(?:all\s+)?(?:my\s+)?(?:high|low|medium|priority|urgent)?\s*(?:priority\s+)?tickets?', 'ticket_search'),
+            (r'\b(?:all|high|low|medium)\s+priority\s+tickets?', 'ticket_search'),
         ]
         
         # Knowledge-related patterns
@@ -138,13 +140,23 @@ class FastIntentClassifier:
         ticket_info_keywords = ['status', 'resolution', 'priority', 'category', 'description', 'assigned', 'created', 'updated']
         has_ticket_info = any(keyword in query_lower for keyword in ticket_info_keywords)
         
-        # Check if it's a mixed query (both ticket and knowledge elements, but not specific ticket info)
-        if ticket_match and knowledge_match and not has_ticket_info and not ticket_entities.get('ticket_id'):
+        # More precise mixed query detection - only for explicit dual requests
+        explicit_mixed_indicators = [
+            'can you also' in query_lower and any(kw in query_lower for kw in ['what is', 'how to', 'explain']),
+            'and also' in query_lower and ticket_match and knowledge_match,
+            'also tell me' in query_lower and (ticket_match or knowledge_match),
+            'also explain' in query_lower and (ticket_match or knowledge_match),
+            # More specific pattern: "I have a ticket... also explain/tell me"
+            'ticket' in query_lower and 'also' in query_lower and any(kw in query_lower for kw in ['explain', 'tell me about', 'what is a', 'how does'])
+        ]
+        
+        # Only classify as mixed if there are explicit indicators for both types
+        if any(explicit_mixed_indicators):
             return Intent(
                 intent_type=IntentType.MIXED_QUERY,
                 confidence=0.90,
                 entities=ticket_entities,
-                reasoning=f"Detected mixed query: ticket pattern '{ticket_match}' + knowledge pattern '{knowledge_match}'"
+                reasoning=f"Detected explicit mixed query with dual request indicators"
             )
         elif ticket_match:
             confidence = 0.95 if ticket_entities.get('ticket_id') else 0.85

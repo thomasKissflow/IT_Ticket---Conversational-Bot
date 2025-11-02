@@ -60,7 +60,7 @@ class VoiceAssistantOrchestrator:
         self.processing_query = False
         
         # Configuration
-        self.aws_region = os.getenv('AWS_REGION', 'us-east-1')
+        self.aws_region = os.getenv('AWS_REGION', 'us-east-2')
         self.response_time_target = 0.5  # 500ms target
         self.max_response_time = 3.0  # 3 second timeout
     
@@ -262,17 +262,56 @@ class VoiceAssistantOrchestrator:
         session_id = self.current_session.session_id if self.current_session else None
         
         try:
-            logger.info(f"🚨 Interruption: {event.transcript}")
+            logger.info(f"🚨 Interruption detected: {event.transcript}")
             
             if self.performance_optimizer and self.performance_optimizer.monitor:
                 self.performance_optimizer.monitor.metrics.interruption_count += 1
             
             # CRITICAL: Stop all current speech immediately
             if self.voice_processor:
-                asyncio.create_task(self.voice_processor.output_handler.stop_speaking())
+                # Use the improved interruption handling method
+                async def handle_interruption_async():
+                    try:
+                        await self.voice_processor.handle_interruption_immediately()
+                        logger.info("✅ Interruption handled successfully")
+                    except Exception as stop_error:
+                        logger.error(f"Error handling interruption: {stop_error}")
+                
+                # Schedule the interruption handling in the event loop
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # Create task to handle interruption
+                        loop.create_task(handle_interruption_async())
+                    else:
+                        # If no event loop, create one
+                        asyncio.create_task(handle_interruption_async())
+                except RuntimeError as e:
+                    if "no running event loop" in str(e):
+                        # Handle the case where we're called from a different thread
+                        logger.warning("No event loop available, using thread-safe approach")
+                        # Use thread-safe approach to schedule the coroutine
+                        def schedule_interruption_handling():
+                            try:
+                                new_loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(new_loop)
+                                new_loop.run_until_complete(self.voice_processor.handle_interruption_immediately())
+                                new_loop.close()
+                            except Exception as thread_error:
+                                logger.error(f"Thread-safe interruption handling error: {thread_error}")
+                        
+                        import threading
+                        interruption_thread = threading.Thread(target=schedule_interruption_handling)
+                        interruption_thread.start()
+                    else:
+                        logger.error(f"Event loop error: {e}")
+                except Exception as interruption_error:
+                    logger.error(f"Error scheduling interruption handling: {interruption_error}")
             
-            # Only process meaningful interruptions (not just audio feedback)
-            if len(event.transcript.split()) >= 3 and event.confidence >= 0.8:
+            # Process meaningful interruptions (even more responsive)
+            if len(event.transcript.split()) >= 1 and event.confidence >= 0.5:
+                logger.info(f"🎤 Processing interruption: '{event.transcript}'")
+                
                 # Add interruption to conversation history
                 if self.current_session:
                     self.current_session.add_message(
@@ -282,15 +321,43 @@ class VoiceAssistantOrchestrator:
                     )
                 
                 # Process the interruption as a new query
-                asyncio.create_task(self._process_user_query(event.transcript))
+                async def process_interruption_async():
+                    try:
+                        # Wait a moment for speech to stop
+                        await asyncio.sleep(0.2)
+                        
+                        # Check if this is a follow-up or addition to previous question
+                        follow_up_indicators = [
+                            'also', 'and', 'additionally', 'plus', 'furthermore',
+                            'what about', 'how about', 'tell me more', 'more details',
+                            'can you also', 'what else', 'anything else'
+                        ]
+                        
+                        transcript_lower = event.transcript.lower()
+                        is_follow_up = any(indicator in transcript_lower for indicator in follow_up_indicators)
+                        
+                        if is_follow_up:
+                            logger.info(f"🔗 Detected follow-up question: {event.transcript}")
+                        
+                        await self._process_user_query(event.transcript)
+                    except Exception as process_error:
+                        logger.error(f"Error processing interruption query: {process_error}")
+                
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        loop.create_task(process_interruption_async())
+                    else:
+                        asyncio.create_task(process_interruption_async())
+                except Exception as process_error:
+                    logger.error(f"Error scheduling interruption processing: {process_error}")
+            else:
+                logger.debug(f"Interruption too short or low confidence: '{event.transcript}' "
+                           f"({len(event.transcript.split())} words, {event.confidence:.2f} confidence)")
             
         except Exception as e:
-            # Handle interruption errors asynchronously
-            async def handle_error():
-                error_result = await handle_voice_error(e, "VoiceAssistantOrchestrator", "handle_interruption", session_id)
-                logger.error(f"Error handling interruption: {error_result['error_id']}")
-            
-            asyncio.create_task(handle_error())
+            logger.error(f"Error handling interruption: {e}")
+            # Don't try to create async tasks in error handling
     
     def _handle_audio_level(self, info: Dict[str, Any]):
         """Handle audio level updates for monitoring."""

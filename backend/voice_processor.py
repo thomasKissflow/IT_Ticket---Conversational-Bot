@@ -23,7 +23,7 @@ class VoiceProcessorConfig:
     """Configuration for VoiceProcessor"""
     sample_rate: int = 16000
     channels: int = 1
-    aws_region: str = 'us-east-1'
+    aws_region: str = 'us-east-2'
     voice_id: str = 'Matthew'
     interruption_word_threshold: int = 3
     interruption_confidence_threshold: float = 0.7
@@ -225,8 +225,36 @@ class VoiceProcessor:
             await self.output_handler.stop_speaking()
             self.interruption_detector.set_playback_active(False)
             self.is_speaking = False
+            
+            # Resume listening after stopping speech
+            self.is_listening = True
+            if hasattr(self.input_handler, 'set_interruption_mode'):
+                self.input_handler.set_interruption_mode(True)
+                
         except Exception as e:
             logger.error(f"Error stopping speech: {e}")
+    
+    async def handle_interruption_immediately(self):
+        """Immediately handle interruption with proper state management"""
+        try:
+            logger.info("🚨 Handling interruption immediately")
+            
+            # Stop speech immediately
+            await self.stop_speaking()
+            
+            # Brief pause to let audio settle
+            await asyncio.sleep(0.1)
+            
+            # Ensure we're ready to listen
+            self.is_listening = True
+            self.is_speaking = False
+            
+            logger.info("✅ Ready for new input after interruption")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error handling immediate interruption: {e}")
+            return False
     
     def is_currently_speaking(self) -> bool:
         """Check if currently speaking"""

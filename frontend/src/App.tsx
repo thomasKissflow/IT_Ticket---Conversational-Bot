@@ -36,9 +36,9 @@ function App() {
             <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
               Superops IT Voice Assistant
             </h1>
-            {/* <p className="text-gray-400 text-lg leading-relaxed">
-              Intelligent support with voice interaction
-            </p> */}
+            <p className="text-gray-400 text-lg leading-relaxed">
+              Agentic AI | IT Support
+            </p> 
           </div>
 
           {/* Central Glowing Orb */}

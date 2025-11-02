@@ -89,8 +89,8 @@ class DataProcessor:
             return self.llm_client.generate_embeddings(texts)
         except Exception as e:
             logger.error(f"Failed to generate embeddings: {e}")
-            # Return zero vectors as fallback
-            return [[0.0] * 1536 for _ in texts]
+            # Return zero vectors as fallback (768 dimensions for Ollama compatibility)
+            return [[0.0] * 768 for _ in texts]
     
     def extract_text_from_pdf(self, pdf_path: str) -> List[Dict[str, Any]]:
         """Extract text from PDF with page and section metadata."""

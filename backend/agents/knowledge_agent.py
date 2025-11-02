@@ -140,8 +140,11 @@ class KnowledgeAgent(BaseAgent):
         Perform semantic search on the knowledge base using ChromaDB embeddings.
         """
         try:
+            # Preprocess query to handle common transcription errors
+            processed_query = self._preprocess_voice_query(query)
+            
             # Use the existing data access method
-            raw_results = await self.data_access.search_knowledge_base(query, top_k=top_k)
+            raw_results = await self.data_access.search_knowledge_base(processed_query, top_k=top_k)
             
             # Convert to KnowledgeChunk objects
             knowledge_chunks = []
@@ -476,6 +479,41 @@ class KnowledgeAgent(BaseAgent):
         except Exception as e:
             print(f"Error finding related topics: {e}")
             return []
+    
+    def _preprocess_voice_query(self, query: str) -> str:
+        """Preprocess voice query to handle common transcription errors."""
+        import re
+        
+        processed_query = query.lower()
+        
+        # Define corrections with word boundaries to avoid partial replacements
+        corrections = [
+            (r'\bherbs\b', 'probe'),
+            (r'\bherb\b', 'probe'), 
+            (r'\bprob\b', 'probe'),  # Only replace "prob" as whole word, not "probe"
+            (r'\bsuper obs\b', 'superops'),
+            (r'\bsuper ops\b', 'superops'),
+            (r'\bsuper op\b', 'superops'),
+            (r'\bso ops\b', 'superops'),
+            (r'\bsuros\b', 'superops'),
+            (r'\bsoros\b', 'superops'),
+            (r'\bsulus ops\b', 'superops'),  # "Sulus ops" → "SuperOps"
+            (r'\bpoloies\b', 'policies'),    # "poloies" → "policies"
+            (r'\bpolices\b', 'policies'),    # "polices" → "policies"
+            (r'\bgaming\b', 'give me'),      # "Gaming step by step" → "Give me step by step"
+        ]
+        
+        # Apply corrections using regex word boundaries
+        original_query = processed_query
+        for pattern, replacement in corrections:
+            processed_query = re.sub(pattern, replacement, processed_query)
+        
+        # Only show correction message if something actually changed
+        if processed_query != original_query:
+            print(f"🔧 Voice query corrected: '{query}' → '{processed_query}'")
+            return processed_query
+        else:
+            return query  # Return original case if no corrections needed
     
     async def health_check(self) -> bool:
         """Check if the KnowledgeAgent is healthy and ready."""

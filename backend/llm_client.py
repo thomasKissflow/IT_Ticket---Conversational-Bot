@@ -360,7 +360,8 @@ Remember: You're here to make IT support feel personal and helpful, not automate
         else:
             # Return zero vectors as fallback
             logger.error("No embedding provider available, returning zero vectors")
-            return [[0.0] * 1536 for _ in texts]
+            # Use 768 dimensions to match Ollama nomic-embed-text model
+            return [[0.0] * 768 for _ in texts]
     
     def health_check(self) -> bool:
         """Perform health check on current provider."""

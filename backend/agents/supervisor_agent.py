@@ -116,8 +116,17 @@ class SupervisorAgent(BaseAgent):
         # Create prompt for intent analysis
         prompt = self._create_intent_analysis_prompt(query, conversation_context)
         
-        # Call LLM
-        response = await self._call_bedrock(prompt)
+        # Call LLM with timeout
+        try:
+            response = await asyncio.wait_for(self._call_bedrock(prompt), timeout=2.0)  # 2 second timeout
+        except asyncio.TimeoutError:
+            print("⏰ Supervisor LLM call timed out, using fallback")
+            return Intent(
+                intent_type=IntentType.UNKNOWN,
+                confidence=0.5,
+                entities={},
+                reasoning="LLM timeout, using fallback classification"
+            )
         
         # Parse response
         intent_data = self._parse_intent_response(response)
@@ -204,8 +213,8 @@ Respond only with the JSON object, no additional text."""
                         "content": prompt
                     }
                 ],
-                "max_tokens": 512,
-                "temperature": 0.6
+                "max_tokens": 150,  # Reduced for speed
+                "temperature": 0.2  # Lower temperature for faster responses
             }
             
             # Make the call in a thread pool to avoid blocking
@@ -312,6 +321,11 @@ Respond only with the JSON object, no additional text."""
             # For escalation requests, we don't route to any specific agent
             # The requires_escalation flag will be set in process_query
             # This will be handled by the main orchestrator
+            pass
+        
+        elif intent.intent_type == IntentType.FOLLOWUP:
+            # Handle follow-up queries - these should be processed by the humanizer
+            # Don't route to any agent, let the humanizer handle it with stored context
             pass
         
         else:  # UNKNOWN

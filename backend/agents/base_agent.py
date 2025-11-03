@@ -21,6 +21,7 @@ class IntentType(Enum):
     MIXED_QUERY = "mixed_query"
     GREETING = "greeting"
     ESCALATION = "escalation"
+    FOLLOWUP = "followup"
     UNKNOWN = "unknown"
 
 
@@ -40,6 +41,7 @@ class ConversationContext:
     current_topic: Optional[str] = None
     last_agent_used: Optional[str] = None
     confidence_scores: List[float] = field(default_factory=list)
+    last_response_data: Optional[Dict[str, Any]] = None  # Store last response data for follow-ups
     
     def add_message(self, content: str, speaker: str, confidence: Optional[float] = None):
         """Add a message to the conversation history."""

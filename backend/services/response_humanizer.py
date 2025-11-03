@@ -51,9 +51,18 @@ class ResponseHumanizer:
             if self._is_escalation_request(agent_results, original_query):
                 return self._get_escalation_response()
             
+            # Check if this is a request for more information about previous response
+            if self._is_more_info_request(original_query):
+                print(f"🔍 Detected more info request: {original_query}")
+                if context and context.get('last_response_data'):
+                    print(f"📚 Found stored response data, generating detailed response")
+                    return await self._handle_more_info_request(original_query, context['last_response_data'])
+                else:
+                    print(f"❌ No stored response data available")
+                    return "I'd be happy to provide more details. Could you be more specific about what aspect you'd like me to elaborate on?"
+            
             # Handle simple greetings
             if self._is_greeting(original_query):
-
                 return self._get_greeting_response()
             
             # Handle thank you messages
@@ -69,7 +78,6 @@ class ResponseHumanizer:
                 return self._get_clarification_response(original_query)
             
             # Generate human-like response using LLM
-
             return await self._generate_human_response(agent_results, original_query, context)
             
         except Exception as e:
@@ -144,11 +152,21 @@ class ResponseHumanizer:
                 if intent and hasattr(intent, 'intent_type') and intent.intent_type.value == 'escalation':
                     return True
         
-        # Check query for escalation keywords
-        escalation_keywords = ['escalate', 'human', 'person', 'agent', 'transfer', 'supervisor']
+        # Check for explicit escalation requests only
+        explicit_escalation_keywords = ['escalate', 'transfer', 'supervisor', 'speak to human', 'talk to person']
         query_lower = query.lower()
-        if any(keyword in query_lower for keyword in escalation_keywords):
+        if any(keyword in query_lower for keyword in explicit_escalation_keywords):
             return True
+        
+        # Don't escalate for follow-up questions or requests for more info
+        follow_up_indicators = [
+            'another question', 'next question', 'different question', 'new question',
+            'more details', 'more information', 'tell me more', 'continue',
+            'yes', 'no', 'ok', 'sure', 'please'
+        ]
+        
+        if any(indicator in query_lower for indicator in follow_up_indicators):
+            return False  # These are follow-ups, not escalation requests
         
         # Only escalate if ALL non-supervisor agents require escalation AND we have no useful data
         non_supervisor_results = [r for r in agent_results if r.get('agent_name') != 'SupervisorAgent']
@@ -194,6 +212,15 @@ class ResponseHumanizer:
         """Get a clarification response instead of immediate escalation."""
         query_lower = query.lower().strip()
         
+        # Handle follow-up question requests
+        if 'another question' in query_lower or 'different question' in query_lower or 'new question' in query_lower:
+            print(f"🔄 Detected follow-up question request: {query}")
+            return "Of course! What would you like to know?"
+        
+        # Handle requests for more information
+        if any(phrase in query_lower for phrase in ['more details', 'more information', 'tell me more', 'continue']):
+            return "I'd be happy to provide more details. What specific aspect would you like me to elaborate on?"
+        
         # Specific clarification for potential typos or unclear terms
         if 'sulus' in query_lower:
             return "I think you might mean SuperOps? Could you clarify what you're asking about?"
@@ -224,25 +251,43 @@ class ResponseHumanizer:
             # Prepare the data for the LLM
             response_data = self._prepare_response_data(agent_results)
             
-            # For ticket queries, try a simple template first
+            # FAST PATH: Try template responses first to avoid LLM calls
             if response_data.get('ticket_results'):
                 template_response = self._try_template_response(response_data['ticket_results'], original_query)
                 if template_response:
                     print(f"📝 Template response: {template_response[:50]}...")
                     return template_response
             
-            # For knowledge queries, try a comprehensive knowledge response first
+            # FAST PATH: For knowledge queries, try template response first
             if response_data.get('knowledge_results'):
                 template_response = await self._try_knowledge_template_response(response_data['knowledge_results'], original_query)
                 if template_response:
                     print(f"📚 Knowledge comprehensive response: {template_response[:50]}...")
                     return template_response
             
+            # FAST PATH: For simple cases, use direct responses without LLM
+            if len(agent_results) == 1 and agent_results[0].get('agent_name') == 'SupervisorAgent':
+                intent_data = agent_results[0].get('data', {}).get('intent')
+                if intent_data and hasattr(intent_data, 'intent_type'):
+                    if intent_data.intent_type.value == 'followup':
+                        entities = getattr(intent_data, 'entities', {})
+                        followup_type = entities.get('followup_type', '')
+                        if followup_type == 'new_question':
+                            return "Of course! What would you like to know?"
+                        elif followup_type == 'more_details':
+                            return "I'd be happy to provide more details. What specific aspect would you like me to elaborate on?"
+                    elif intent_data.intent_type.value == 'escalation':
+                        return "I understand you'd like to speak with someone else. Let me connect you with a human agent who can help you better."
+            
             # Create prompt for humanizing the response
             prompt = self._create_humanization_prompt(original_query, response_data, context)
             
-            # Generate response using LLM
-            response = await self._call_llm(prompt)
+            # Generate response using LLM with timeout
+            try:
+                response = await asyncio.wait_for(self._call_llm(prompt), timeout=3.0)  # 3 second timeout
+            except asyncio.TimeoutError:
+                logger.warning("LLM call timed out, using fallback response")
+                return self._create_fallback_response(response_data, original_query)
             
             # Clean up the response
             return self._clean_response(response)
@@ -254,13 +299,13 @@ class ResponseHumanizer:
     async def _call_llm(self, prompt: str) -> str:
         """Call the LLM client to generate a response."""
         try:
-            # Use the existing LLM client
+            # Use the existing LLM client with faster settings
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: self.llm_client.converse(
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=100,  # Very short responses
-                    temperature=0.5
+                    max_tokens=50,  # Even shorter for speed
+                    temperature=0.1  # Lower temperature for faster, more deterministic responses
                 )
             )
             return response
@@ -293,11 +338,34 @@ class ResponseHumanizer:
             'more details', 'more information', 'tell me more', 'explain more',
             'continue', 'more steps', 'remaining steps', 'next steps',
             'elaborate', 'expand', 'detailed', 'in detail', 'further',
-            'yes please', 'yes', 'continue with', 'go on', 'keep going'
+            'yes please', 'yes', 'continue with', 'go on', 'keep going',
+            'give me more', 'show me more', 'additional info'
         ]
         query_lower = query.lower().strip()
         return any(indicator in query_lower for indicator in more_info_indicators)
     
+    async def _handle_more_info_request(self, query: str, last_response_data: Dict[str, Any]) -> str:
+        """Handle requests for more information about the previous response."""
+        try:
+            # Get the previous agent results
+            previous_agent_results = last_response_data.get('agent_results', [])
+            original_query = last_response_data.get('original_query', '')
+            
+            # Look for knowledge agent results in the previous response
+            for agent_result in previous_agent_results:
+                if agent_result.get('agent_name') == 'KnowledgeAgent':
+                    knowledge_data = agent_result.get('data', {})
+                    if knowledge_data.get('type') == 'knowledge_search':
+                        # Generate detailed response from the stored knowledge data
+                        return await self._generate_detailed_knowledge_response(knowledge_data, original_query)
+            
+            # If no knowledge data found, provide a helpful response
+            return "I'd be happy to provide more details. Could you be more specific about what aspect you'd like me to elaborate on?"
+            
+        except Exception as e:
+            logger.error(f"Error handling more info request: {e}")
+            return "I'd be happy to provide more details, but I'm having trouble accessing the previous information. Could you ask your question again?"
+
     async def _generate_detailed_knowledge_response(self, knowledge_data: Dict[str, Any], query: str) -> str:
         """Generate a detailed response when user asks for more information."""
         try:
@@ -372,27 +440,24 @@ Detailed response:"""
             if not answer or not knowledge_chunks:
                 return "I found some information but couldn't extract the key details. Could you be more specific?"
             
-            # Create a concise response using LLM
-            prompt = f"""Create a SHORT, helpful response for: "{query}"
-
-Information available:
-{answer[:300]}...
-
-STRICT REQUIREMENTS:
-- Maximum 2 sentences
-- Under 150 characters total
-- One key fact only
-- End with "Would you like more details?"
-
-Examples:
-Q: "What is a probe?" 
-A: "A probe collects monitoring data from your network devices. Would you like more details?"
-
-Q: "How to install SuperOps?"
-A: "Download the installer and run the setup wizard. Would you like the detailed steps?"
-
-Your response (KEEP IT SHORT):"""
-
+            # FAST PATH: Try to create response without LLM for common patterns
+            query_lower = query.lower()
+            
+            # For "what is" questions
+            if query_lower.startswith('what is'):
+                topic = query_lower.replace('what is', '').replace('a ', '').replace('an ', '').strip()
+                if 'probe' in topic:
+                    return "A probe scans devices in your network for monitoring. Would you like more details?"
+                elif 'subnet' in topic:
+                    return "A subnet is a network segment for organizing devices. Would you like more details?"
+            
+            # For "how do i" or "how to" questions
+            elif any(phrase in query_lower for phrase in ['how do i', 'how to', 'steps to']):
+                if 'probe' in query_lower and 'add' in query_lower:
+                    return "Go to Modules → Network Monitor → Probes and click +Probe. Would you like more details?"
+                elif 'subnet' in query_lower and any(word in query_lower for word in ['add', 'create', 'manual']):
+                    return "Go to Modules → Network Monitor → Network Scans, click Add Subnet manually. Would you like more details?"
+            
             # Check if this is a step-by-step query
             is_step_query = self._detect_step_by_step_query(query)
             
@@ -422,34 +487,27 @@ Your response (KEEP IT SHORT):"""
                             step_response += f"{clean_step}\n"
                     return step_response.strip()
             
-            # Generate concise response
-            concise_response = await self._call_llm(prompt)
-            
-            # Clean up the response
-            cleaned_response = self._clean_response(concise_response)
-            
-            # Ensure it's not too long (if it is, truncate and add follow-up offer)
-            if len(cleaned_response) > 150:
-                sentences = cleaned_response.split('. ')
-                if len(sentences) > 1:
-                    # Take first sentence and add follow-up offer
-                    short_response = sentences[0]
-                    if not short_response.endswith('.'):
-                        short_response += '.'
-                    short_response += " Would you like more details?"
-                    return short_response
-                else:
-                    # Truncate long single sentence
-                    truncated = cleaned_response[:140] + "..."
-                    return truncated + " Would you like more details?"
-            
-            return cleaned_response
+            # Fallback to simple response without LLM
+            return self._create_fallback_concise_response(knowledge_data, query)
             
         except Exception as e:
             logger.error(f"Error generating concise knowledge response: {e}")
             # Fallback to simple response
             return self._create_fallback_concise_response(knowledge_data, query)
     
+    def _create_fallback_response(self, response_data: Dict[str, Any], query: str) -> str:
+        """Create a fast fallback response when LLM times out."""
+        # Check for ticket results
+        if response_data.get('ticket_results'):
+            return "I found some ticket information. Could you be more specific about what you need?"
+        
+        # Check for knowledge results
+        if response_data.get('knowledge_results'):
+            return "I found some information about that. Would you like me to provide more details?"
+        
+        # Generic fallback
+        return "I'm processing your request. Could you rephrase your question?"
+
     def _create_fallback_concise_response(self, knowledge_data: Dict[str, Any], query: str) -> str:
         """Create a fallback concise response when LLM fails."""
         try:
@@ -684,11 +742,14 @@ Response:"""
     async def _call_llm_for_knowledge(self, prompt: str) -> str:
         """Call LLM specifically for knowledge synthesis."""
         try:
-            # Use the converse method for better results
-            response = self.llm_client.converse(
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1500,  # Allow longer responses for comprehensive answers
-                temperature=0.7   # Slightly creative for natural language
+            # Use faster settings for knowledge synthesis
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self.llm_client.converse(
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=200,  # Reduced for speed
+                    temperature=0.3   # Lower temperature for speed
+                )
             )
             
             return response
@@ -743,7 +804,10 @@ Response:"""
                     # Check for priority
                     if 'priority' in query.lower():
                         priority = ticket.get('priority', 'Not specified')
-                        response_parts.append(f"it has {priority.lower()} priority")
+                        if priority and priority != 'Not specified':
+                            response_parts.append(f"it has {priority.lower()} priority")
+                        else:
+                            response_parts.append("priority is not specified")
                     
                     # Check for resolution details
                     if 'resolution' in query.lower() and 'resolution time' not in query.lower():
@@ -909,7 +973,7 @@ Provide a natural, conversational response as an IT support assistant. Be helpfu
     async def _call_llm(self, prompt: str) -> str:
         """Call the LLM to generate a human-like response."""
         try:
-            # Prepare the request body
+            # Use faster settings for speed
             body = {
                 "messages": [
                     {
@@ -917,8 +981,8 @@ Provide a natural, conversational response as an IT support assistant. Be helpfu
                         "content": prompt
                     }
                 ],
-                "max_tokens": 512,
-                "temperature": 0.6
+                "max_tokens": 100,  # Reduced for speed
+                "temperature": 0.2  # Lower temperature for speed
             }
             
             # Make the call in a thread pool to avoid blocking

@@ -420,6 +420,21 @@ class VoiceAssistantOrchestrator:
                 confidence=self._calculate_overall_confidence(agent_results)
             )
             
+            # Store response data for follow-up questions
+            self.current_session.last_response_data = {
+                'agent_results': [
+                    {
+                        'agent_name': result.agent_name,
+                        'data': result.data,
+                        'confidence': result.confidence,
+                        'requires_escalation': result.requires_escalation
+                    } for result in agent_results
+                ],
+                'original_query': query,
+                'response': response,
+                'timestamp': time.time()
+            }
+            
             # Update performance metrics
             self.performance_optimizer.monitor.metrics.add_response_time(processing_time, "overall")
             
@@ -583,10 +598,14 @@ class VoiceAssistantOrchestrator:
                         print(f"📊 Data to humanizer: Ticket not found")
             
             # Use the response humanizer to create a natural response
+            context = {
+                'session_id': self.current_session.session_id if self.current_session else None,
+                'last_response_data': self.current_session.last_response_data if self.current_session else None
+            }
             response = await humanize_agent_response(
                 agent_data, 
                 original_query,
-                context={'session_id': self.current_session.session_id if self.current_session else None}
+                context=context
             )
             
             print(f"🗣️ Final response: {response[:50]}...")

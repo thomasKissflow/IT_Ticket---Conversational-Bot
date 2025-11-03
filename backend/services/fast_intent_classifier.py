@@ -84,6 +84,16 @@ class FastIntentClassifier:
             (r'\b(?:yes|yeah|yep|sure|okay|ok)\b.*(?:please)', 'followup_confirm'),
             (r'\b(?:go\s+ahead|continue|proceed)', 'followup_confirm'),
             
+            # New question requests
+            (r'\b(?:i\s+have\s+)?(?:another|different|new)\s+question', 'new_question'),
+            (r'\b(?:next|different)\s+question', 'new_question'),
+            
+            # More details requests (must be standalone, not about specific things)
+            (r'^\s*(?:give\s+me\s+)?(?:more\s+)?(?:details|information)\s*$', 'more_details'),
+            (r'^\s*(?:tell\s+me\s+)?more\s*$', 'more_details'),
+            (r'^\s*(?:elaborate|expand|continue)\s*$', 'more_details'),
+            (r'\b(?:yes|yeah|yep|sure|okay|ok)\b.*(?:more|details|continue)', 'more_details'),
+            
             # Contextual reference patterns
             (r'\b(?:who|which\s+team)\s+(?:was\s+)?(?:it\s+)?(?:assigned)', 'contextual_team'),
             (r'\b(?:what\s+(?:was\s+)?(?:the\s+)?(?:resolution\s+time|time))', 'contextual_time'),
@@ -120,19 +130,7 @@ class FastIntentClassifier:
                 reasoning="Detected escalation request"
             )
         
-        # Check for follow-up queries (should maintain context from previous query)
-        followup_match = self._check_patterns(query_lower, self.followup_patterns)
-        if followup_match:
-            # For follow-ups, we should maintain the same intent as the previous query
-            # This will be handled by the supervisor agent with context
-            return Intent(
-                intent_type=IntentType.TICKET_QUERY,  # Default to ticket for follow-ups
-                confidence=0.85,
-                entities={'followup': True},
-                reasoning="Detected follow-up query"
-            )
-        
-        # Check for ticket-related queries
+        # Check for ticket-related queries FIRST (before followup patterns)
         ticket_match, ticket_entities = self._check_ticket_patterns(query_lower)
         knowledge_match = self._check_patterns(query_lower, self.knowledge_patterns)
         
@@ -175,6 +173,16 @@ class FastIntentClassifier:
                 confidence=0.85,
                 entities={},
                 reasoning=f"Detected knowledge query pattern: {knowledge_match}"
+            )
+        
+        # Check for follow-up queries LAST (only if no specific ticket/knowledge match)
+        followup_match = self._check_patterns(query_lower, self.followup_patterns)
+        if followup_match:
+            return Intent(
+                intent_type=IntentType.FOLLOWUP,
+                confidence=0.90,
+                entities={'followup_type': followup_match},
+                reasoning=f"Detected follow-up query: {followup_match}"
             )
         
         # If no clear pattern matches, return None for LLM fallback

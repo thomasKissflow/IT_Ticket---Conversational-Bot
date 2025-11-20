@@ -13,8 +13,6 @@ python-multipart
 botocore
 amazon-transcribe
 
-# Audio processing
-pyaudio
 
 # PDF handling
 PyPDF2
